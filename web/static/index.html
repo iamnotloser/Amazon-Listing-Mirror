@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>竞品 LISTING 分析器</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<script>
+/* 在首帧渲染前确定主题，避免闪烁：优先用户选择(localStorage)，否则跟随系统 */
+(function(){try{var t=localStorage.getItem('theme');if(!t){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#fff; --text:#1f2329; --sub:#6b7280; --line:#e3e6eb;
+    --accent:#2563eb; --accent-soft:#eaf1ff; --ok:#0f9d58; --warn:#b45309; --log:#f7f8fa;
+    --chosen:#FFFBEA; --tag-bg:#EAF1FF; --tag-fg:#2563eb; --tag-green-bg:#D1FAE5; --tag-green-fg:#065F46;
+  }
+  :root[data-theme="dark"]{ --bg:#14161a; --card:#1c1f24; --text:#e6e8eb; --sub:#9aa3ad; --line:#2c3037;
+    --accent:#5b8def; --accent-soft:#1e2a44; --log:#171a1e;
+    --chosen:#2a2410; --tag-bg:#1e2a44; --tag-fg:#9db8ff; --tag-green-bg:#14351f; --tag-green-fg:#6ee7a7; }
+  /* 无 JS / 脚本未执行时，跟随系统 */
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme]){ --bg:#14161a; --card:#1c1f24; --text:#e6e8eb; --sub:#9aa3ad; --line:#2c3037;
+      --accent:#5b8def; --accent-soft:#1e2a44; --log:#171a1e;
+      --chosen:#2a2410; --tag-bg:#1e2a44; --tag-fg:#9db8ff; --tag-green-bg:#14351f; --tag-green-fg:#6ee7a7; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 60px}
+  header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+  /* 主题切换按钮：亮色显示月亮（点击→暗），暗色显示太阳（点击→亮） */
+  .theme-btn{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--card);
+    color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;
+    transition:border-color .15s ease, color .15s ease, background .15s ease;flex-shrink:0}
+  .theme-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .theme-btn svg{width:20px;height:20px;flex-shrink:0}
+  .theme-btn .icon-sun{display:none}
+  :root[data-theme="dark"] .theme-btn .icon-sun{display:block}
+  :root[data-theme="dark"] .theme-btn .icon-moon{display:none}
+  /* 仅在切换瞬间启用主题过渡，避免长期影响 hover/动效 */
+  .theme-transitioning,.theme-transitioning *{transition:background-color .25s ease,color .25s ease,border-color .25s ease,fill .25s ease,stroke .25s ease !important}
+  .brand{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  .brand img{width:38px;height:38px;flex-shrink:0}
+  header h1{font-size:22px;margin:0}
+  header p{margin:0;color:var(--sub);font-size:13px}
+  .tabs{display:flex;gap:8px;margin:22px 0 16px}
+  .tab{padding:9px 16px;border:1px solid var(--line);background:var(--card);
+    border-radius:8px;cursor:pointer;color:var(--sub);font-size:13.5px}
+  .tab.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}
+  .hint{font-size:12px;color:var(--sub);font-weight:400;margin-left:6px}
+  input,textarea,select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;
+    background:transparent;color:var(--text);font:inherit;outline:none}
+  input:focus,textarea:focus,select:focus{border-color:var(--accent)}
+  select{appearance:none;-webkit-appearance:none;padding-right:36px;cursor:pointer;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 12px center;background-size:14px;transition:border-color .15s ease}
+  select:hover{border-color:var(--accent)}
+  select option{background-color:var(--card);color:var(--text);padding:6px 12px}
+  select optgroup{color:var(--sub);font-weight:700;font-style:normal;background-color:var(--bg);padding-top:4px}
+  :root[data-theme="dark"] select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239aa3ad' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")}
+  textarea{min-height:96px;resize:vertical}
+  .field{margin-bottom:16px}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .chk{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--sub);font-weight:400}
+  .chk input{width:auto}
+  button.primary{margin-top:6px;padding:11px 22px;border:0;border-radius:8px;background:var(--accent);
+    color:#fff;font-size:14px;font-weight:600;cursor:pointer}
+  button.primary:disabled{opacity:.55;cursor:not-allowed}
+  .tags{font-size:12px;color:var(--sub);margin-top:6px}
+  .tags b{color:var(--accent)}
+  .log{margin-top:20px;background:var(--log);border:1px solid var(--line);border-radius:10px;
+    padding:12px 14px;height:260px;overflow:auto;font:12.5px/1.75 ui-monospace,Consolas,monospace;
+    white-space:pre-wrap;color:var(--sub)}
+  .log .ok{color:var(--ok)}
+  .status{margin-left:10px;font-size:13px;color:var(--sub)}
+  .result{margin-top:16px;padding:16px;border:1px solid var(--line);border-radius:10px;
+    display:none;background:var(--accent-soft)}
+  .result a{display:inline-block;margin-top:8px;padding:10px 18px;background:var(--accent);
+    color:#fff;text-decoration:none;border-radius:8px;font-weight:600}
+  .tip{margin-top:10px;padding:8px 12px;background:#FFF7E6;border-left:3px solid #F59E0B;
+    font-size:12.5px;color:#92400E;border-radius:4px}
+  :root[data-theme="dark"] .tip{background:#3a2e1a;color:#fcd34d;border-left-color:#b45309}
+  @media (prefers-color-scheme: dark){ :root:not([data-theme]) .tip{background:#3a2e1a;color:#fcd34d;border-left-color:#b45309} }
+  .err{color:#c0392b}
+  .hidden{display:none}
+  /* 候选卡片表格 */
+  .cand{margin-top:14px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .cand-head{display:grid;grid-template-columns:34px 56px 1fr 110px 90px 64px 64px;gap:8px;
+    padding:8px 12px;background:var(--log);font-size:12px;color:var(--sub);font-weight:600;align-items:center}
+  .cand-row{display:grid;grid-template-columns:34px 56px 1fr 110px 90px 64px 64px;gap:8px;
+    padding:8px 12px;border-top:1px solid var(--line);align-items:center;background:var(--card);
+    font-size:12.5px}
+  .cand-row:hover{background:var(--accent-soft)}
+  .cand-row.chosen{background:var(--chosen)}
+  .cand-row input[type=checkbox]{width:16px;height:16px}
+  .cand-thumb{width:52px;height:52px;object-fit:contain;border:1px solid var(--line);border-radius:4px;background:var(--card)}
+  .cand-title{overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.3}
+  .cand-meta{font-size:11px;color:var(--sub);margin-top:2px}
+  .cand-tag{display:inline-block;padding:2px 6px;border-radius:4px;font-size:11px;background:var(--tag-bg);color:var(--tag-fg);margin-top:3px}
+  .cand-tag.green{background:var(--tag-green-bg);color:var(--tag-green-fg)}
+  .discover-controls{display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap}
+  .discover-controls button{padding:8px 16px;border-radius:7px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-size:13px;color:var(--text)}
+  .discover-controls button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .discover-controls button:disabled{opacity:.5;cursor:not-allowed}
+  .choose-summary{font-size:13px;color:var(--sub)}
+  /* 副标题 + 查看模板按钮 */
+  .subtitle-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px}
+  .subtitle-row p{margin:0}
+  .btn-ghost{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:7px;border:1px solid var(--line);
+    background:var(--card);color:var(--sub);cursor:pointer;font-size:12px;white-space:nowrap;
+    transition:border-color .15s ease,color .15s ease}
+  .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+  /* 模板预览弹窗 */
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:1000;padding:20px}
+  .modal-overlay.open{display:flex}
+  .modal{background:var(--card);border:1px solid var(--line);border-radius:14px;max-width:900px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line)}
+  .modal-head h3{margin:0;font-size:16px}
+  .modal-head .hint{margin:2px 0 0;font-size:12px;color:var(--sub);font-weight:400}
+  .modal-close{background:none;border:0;font-size:20px;cursor:pointer;color:var(--sub);line-height:1;width:32px;height:32px;border-radius:6px;display:flex;align-items:center;justify-content:center}
+  .modal-close:hover{background:var(--accent-soft);color:var(--accent)}
+  .modal-body{padding:18px 20px;overflow:auto}
+  /* 模板预览网格：还原 Excel 模板的行列布局（固定浅色，贴近真实 Excel） */
+  .tpl{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
+  .tpl th,.tpl td{border:1px solid #b7bcc2;padding:6px 8px;vertical-align:middle;text-align:center;word-break:break-word}
+  .tpl .la{background:#dee0e3;font-weight:bold;color:#1f2329}
+  .tpl .lb{background:#eef0f3;font-weight:bold;color:#1f2329;font-size:11px}
+  .tpl .dt{background:#fff;color:#1f2329;text-align:left}
+  .tpl .dtc{background:#fff;color:#1f2329;text-align:center}
+  .tpl .wait{background:#fff2cc;color:#92400e;font-size:11px;text-align:center}
+  .tpl .img{height:46px;background:repeating-linear-gradient(45deg,#f0f1f3,#f0f1f3 8px,#e6e8eb 8px,#e6e8eb 16px);color:#7c8590;font-size:11px}
+  /* ===== Listing 评分入口：评分在独立页面展示 ===== */
+  .analysis{display:none;margin-top:16px;padding-top:14px;border-top:1px dashed var(--line)}
+  .analysis.on{display:block}
+  .analysis-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  .analysis-status{margin-top:8px;font-size:12.5px;color:var(--sub)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="header-main">
+      <div class="brand">
+        <img src="favicon.svg" alt="logo" width="38" height="38">
+        <h1>竞品 LISTING 分析器</h1>
+      </div>
+      <div class="subtitle-row">
+        <p>按 ASIN 收集，或按关键词找 BSR Top5，统一输出「竞品LISTING分析模板」格式 Excel（含主图与 A+ 图）。</p>
+        <button type="button" class="btn-ghost" id="btnTpl">👁 查看模板示例</button>
+      </div>
+    </div>
+    <button class="theme-btn" id="themeBtn" type="button" aria-label="切换暗色/亮色" title="切换暗色/亮色">
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+    </button>
+  </header>
+
+  <div class="tabs">
+    <div class="tab on" data-mode="asin">按 ASIN 收集资料</div>
+    <div class="tab" data-mode="discover">关键词找 BSR Top5</div>
+  </div>
+
+  <form class="card" id="form">
+    <div id="pane-asin">
+      <div class="field">
+        <label>ASIN 列表<span class="hint">支持逗号、空格、换行混合粘贴，单次最多 10 个</span></label>
+        <textarea id="asins" placeholder="B0C3QZ7SNF, B0FCF8K9CG&#10;每行一个也可以"></textarea>
+        <div class="tags" id="asinCount">已识别 <b>0</b> 个有效 ASIN</div>
+      </div>
+    </div>
+
+    <div id="pane-discover" class="hidden">
+      <div class="field">
+        <label>产品关键词<span class="hint">逗号分隔，可填多个</span></label>
+        <input id="keywords" placeholder="sink caddy with drying stone, kitchen sponge holder">
+      </div>
+      <div class="field">
+        <label>每个关键词搜索页数<span class="hint">每页约 10-16 条结果</span></label>
+        <input id="pages" type="number" value="3" min="1" max="10">
+      </div>
+      <div class="discover-controls">
+        <button type="button" id="btnDiscover" class="primary">🔍 搜索候选（几秒）</button>
+        <span class="choose-summary" id="discoverStatus"></span>
+      </div>
+      <div class="cand" id="candBox" style="display:none"></div>
+      <div class="discover-controls" id="discoverActions" style="display:none">
+        <label class="chk"><input type="checkbox" id="checkTop5" checked> 自动选前 5 个去重候选</label>
+        <button type="button" id="btnChooseTop5">一键选前 5</button>
+        <button type="button" id="btnChooseNone">全不选</button>
+        <span class="choose-summary">已选 <b id="chosenCount">0</b> 个（最多 10 个）</span>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="field">
+        <label>站点</label>
+        <select id="site">
+          <optgroup label="美洲">
+            <option value="US" selected>美国 US</option>
+            <option value="CA">加拿大 CA</option>
+            <option value="MX">墨西哥 MX</option>
+            <option value="BR">巴西 BR</option>
+          </optgroup>
+          <optgroup label="欧洲">
+            <option value="UK">英国 UK</option>
+            <option value="DE">德国 DE</option>
+            <option value="FR">法国 FR</option>
+            <option value="IT">意大利 IT</option>
+            <option value="ES">西班牙 ES</option>
+            <option value="NL">荷兰 NL</option>
+            <option value="SE">瑞典 SE</option>
+            <option value="PL">波兰 PL</option>
+            <option value="BE">比利时 BE</option>
+            <option value="TR">土耳其 TR</option>
+          </optgroup>
+          <optgroup label="亚洲">
+            <option value="JP">日本 JP</option>
+            <option value="IN">印度 IN</option>
+            <option value="SG">新加坡 SG</option>
+            <option value="AE">阿联酋 AE</option>
+            <option value="SA">沙特 SA</option>
+          </optgroup>
+          <optgroup label="大洋洲">
+            <option value="AU">澳大利亚 AU</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="field" style="display:flex;align-items:flex-end">
+        <label class="chk"><input type="checkbox" id="xiyou" checked> 用西柚补近 30 天销量 / 校验 BSR</label>
+      </div>
+    </div>
+
+    <div class="row">
+      <button type="submit" class="primary" id="submit">开始收集</button>
+      <span class="status" id="status">等待提交</span>
+    </div>
+  </form>
+
+  <div class="log" id="log">提交后这里显示实时进度</div>
+
+  <div class="result" id="result">
+    <div id="resultText"></div>
+    <a id="download" href="#">下载 Excel（含图片文件夹）</a>
+    <div class="tip">💡 Excel 里嵌了主图 + A+ 图的缩略图，Windows 资源管理器 / IDE 预览看不到图片，<b>请用 WPS 或 Microsoft Excel 打开</b>。zip 包里同时带了每张原图。</div>
+
+    <div class="analysis" id="analysisBox">
+      <div class="analysis-head">
+        <div>
+          <b>Listing 评分</b>
+          <span class="hint">标题 / 五点 / 图片各自独立打分，不合成链接总分；价格、评分、BSR 只做事实卡</span>
+        </div>
+        <button type="button" class="btn-ghost" id="btnAnalyze">开始评分</button>
+      </div>
+      <div class="analysis-status" id="analysisStatus"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let mode = 'asin';
+let timer = null;
+let candidates = [];  // discover 模式的候选缓存
+let chosenSet = new Set();
+let lastCollection = null;  // 本次采集的 collection_id，用于发起评分
+
+// 主题切换：data-theme 驱动 + localStorage 记忆；过渡只在切换瞬间启用，避免影响 hover
+const themeBtn = document.getElementById('themeBtn');
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme') || 'light';
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.classList.add('theme-transitioning');
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem('theme', next); } catch (e) {}
+  setTimeout(() => document.documentElement.classList.remove('theme-transitioning'), 350);
+}
+if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
+// 兜底同步：head 内联脚本在某些环境可能未执行，这里再按 localStorage 应用一次，保证刷新后记住主题
+(function () { try { var t = localStorage.getItem('theme'); if (!t) { t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; } document.documentElement.setAttribute('data-theme', t); } catch (e) {} })();
+// 守护：用户已明确选过主题时，防止外部脚本/扩展把 data-theme 改掉；切换时 localStorage 同步更新故不会冲突
+(function () {
+  try {
+    var root = document.documentElement;
+    var obs = new MutationObserver(function () {
+      var saved = localStorage.getItem('theme');
+      if (saved && root.getAttribute('data-theme') !== saved) root.setAttribute('data-theme', saved);
+    });
+    obs.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+  } catch (e) {}
+})();
+
+// 模板预览弹窗：按钮打开，点遮罩/关闭按钮/Esc 关闭（DOMContentLoaded 确保弹窗元素已解析）
+document.addEventListener('DOMContentLoaded', () => {
+  const tplModal = document.getElementById('tplModal');
+  const openTpl = () => { if (tplModal) tplModal.classList.add('open'); };
+  const closeTpl = () => { if (tplModal) tplModal.classList.remove('open'); };
+  const btnTpl = document.getElementById('btnTpl');
+  if (btnTpl) btnTpl.addEventListener('click', openTpl);
+  const tplClose = document.getElementById('tplClose');
+  if (tplClose) tplClose.addEventListener('click', closeTpl);
+  if (tplModal) tplModal.addEventListener('click', (e) => { if (e.target === tplModal) closeTpl(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeTpl(); });
+});
+
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+  t.classList.add('on');
+  mode = t.dataset.mode;
+  document.getElementById('pane-asin').classList.toggle('hidden', mode !== 'asin');
+  document.getElementById('pane-discover').classList.toggle('hidden', mode !== 'discover');
+});
+
+const asinBox = document.getElementById('asins');
+function countAsins() {
+  const raw = asinBox.value.split(/[\s,，;、]+/).filter(Boolean);
+  const ok = new Set(raw.map(x => x.toUpperCase()).filter(x => /^B0[A-Z0-9]{8}$/.test(x)));
+  document.getElementById('asinCount').innerHTML = `已识别 <b>${ok.size}</b> 个有效 ASIN`;
+}
+asinBox.addEventListener('input', countAsins);
+
+const logEl = document.getElementById('log');
+function log(text) {
+  logEl.textContent += (logEl.textContent ? '\n' : '') + text;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+document.getElementById('form').onsubmit = async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('submit');
+  const status = document.getElementById('status');
+  const result = document.getElementById('result');
+  btn.disabled = true;
+  result.style.display = 'none';
+  logEl.textContent = '';
+  status.textContent = '提交中…';
+
+  // discover 模式且已勾选候选 → 用勾选的 asins
+  let asinsText = asinBox.value;
+  if (mode === 'discover' && chosenSet.size > 0) {
+    if (chosenSet.size > 10) {
+      alert('单次最多 10 个 ASIN，请手动取消或分批处理');
+      btn.disabled = false;
+      return;
+    }
+    asinsText = [...chosenSet].join(', ');
+  }
+
+  const payload = {
+    mode,
+    asins: asinsText,
+    site: document.getElementById('site').value,
+    keywords: document.getElementById('keywords').value,
+    category: document.getElementById('category')?.value || '',
+    bsr_max: parseInt(document.getElementById('bsrMax')?.value || '100', 10),
+    pages: parseInt(document.getElementById('pages').value || '3', 10),
+    use_xiyou: document.getElementById('xiyou').checked
+  };
+
+  try {
+    const res = await fetch('/api/jobs', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '提交失败');
+    status.textContent = '执行中…';
+    poll(data.job_id);
+  } catch (err) {
+    status.innerHTML = `<span class="err">${err.message}</span>`;
+    btn.disabled = false;
+  }
+};
+
+function poll(jobId) {
+  let seen = 0;
+  timer = setInterval(async () => {
+    const res = await fetch(`/api/jobs/${jobId}`);
+    const data = await res.json();
+    (data.logs || []).slice(seen).forEach(x => log(x));
+    seen = (data.logs || []).length;
+
+    if (data.status === 'done') {
+      clearInterval(timer);
+      document.getElementById('submit').disabled = false;
+      document.getElementById('status').textContent = '已完成';
+      const r = document.getElementById('result');
+      document.getElementById('resultText').innerHTML =
+        `<b>已生成 ${data.result.count} 个竞品</b>　文件：${data.result.xlsx}`;
+      const a = document.getElementById('download');
+      a.href = data.result.download;
+      r.style.display = 'block';
+      lastCollection = data.result.collection_id || null;
+      const box = document.getElementById('analysisBox');
+      if (lastCollection) {
+        document.getElementById('analysisStatus').textContent = '已就绪，点「开始评分」进入评分对照页';
+        document.getElementById('btnAnalyze').disabled = false;
+        box.classList.add('on');
+      } else {
+        box.classList.remove('on');
+      }
+      log('✅ 全部完成');
+    } else if (data.status === 'error') {
+      clearInterval(timer);
+      document.getElementById('submit').disabled = false;
+      document.getElementById('status').innerHTML = '<span class="err">失败</span>';
+      log('❌ ' + (data.error || '未知错误'));
+    }
+  }, 1200);
+}
+
+// ============ Listing 评分：独立页面 ============
+
+document.getElementById('btnAnalyze').onclick = () => {
+  if (!lastCollection) return;
+  location.href = '/analysis?collection=' + encodeURIComponent(lastCollection);
+};
+
+// 支持用 ?collection=xxx 直接打开历史采集结果并进入评分
+(function () {
+  const c = new URLSearchParams(location.search).get('collection');
+  if (!c) return;
+  lastCollection = c;
+  document.getElementById('result').style.display = 'block';
+  document.getElementById('resultText').innerHTML = `<b>已载入历史采集</b>　${c}`;
+  document.getElementById('download').href = `/api/collections/${encodeURIComponent(c)}/package`;
+  document.getElementById('analysisBox').classList.add('on');
+  document.getElementById('analysisStatus').textContent = `已载入历史采集 ${c}，点「开始评分」进入评分页`;
+})();
+
+// ============ Discover 候选搜索 + 勾选 ============
+document.getElementById('btnDiscover').onclick = async () => {
+  const kw = document.getElementById('keywords').value.trim();
+  if (!kw) { alert('请先填产品关键词'); return; }
+  const site = document.getElementById('site').value;
+  const pages = parseInt(document.getElementById('pages').value || '3', 10);
+  const btn = document.getElementById('btnDiscover');
+  const status = document.getElementById('discoverStatus');
+  btn.disabled = true;
+  status.textContent = '搜索中…';
+  try {
+    const res = await fetch('/api/discover', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({keywords: kw, site, pages})
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '搜索失败');
+    candidates = data.items || [];
+    status.textContent = `搜到 ${candidates.length} 个候选（站点 ${site}）`;
+    renderCandidates();
+  } catch (err) {
+    status.innerHTML = `<span class="err">${err.message}</span>`;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+// 简单文本相似度：按词集合算 Jaccard，用于"去重同类变体"
+function _titleKey(t) {
+  const ws = (t || '').toLowerCase().match(/[a-z0-9]+/g) || [];
+  const stop = new Set(['for','with','and','the','a','an','of','to','in','on','by','set','kit','pack','piece','pieces','pcs']);
+  return new Set(ws.filter(w => !stop.has(w) && w.length > 2));
+}
+
+function _jaccard(a, b) {
+  if (!a.size || !b.size) return 0;
+  const inter = [...a].filter(x => b.has(x)).length;
+  return inter / (a.size + b.size - inter);
+}
+
+function pickDefaultTopN(list, n = 5, simThreshold = 0.82) {
+  const picked = [];
+  const pickedKeys = [];
+  for (const c of list) {
+    if (picked.length >= n) break;
+    const tk = _titleKey(c.title);
+    if (pickedKeys.some(k => _jaccard(tk, k) >= simThreshold)) continue;
+    picked.push(c);
+    pickedKeys.push(tk);
+  }
+  return picked;
+}
+
+function renderCandidates() {
+  const box = document.getElementById('candBox');
+  const actions = document.getElementById('discoverActions');
+  if (!candidates.length) {
+    box.innerHTML = '<div style="padding:24px;text-align:center;color:var(--sub)">没有搜到候选，试试换关键词或增加翻页数</div>';
+    box.style.display = 'block';
+    actions.style.display = 'none';
+    chosenSet.clear();
+    updateChosenCount();
+    return;
+  }
+  // 默认：自动选前 5 个去重
+  if (document.getElementById('checkTop5').checked) {
+    chosenSet = new Set(pickDefaultTopN(candidates, 5).map(c => c.asin));
+  } else {
+    chosenSet.clear();
+  }
+
+  const rows = candidates.map((c, i) => {
+    const checked = chosenSet.has(c.asin);
+    const title = c.title || '(无标题)';
+    const price = c.price || '—';
+    const rating = c.rating ? c.rating.split(' ')[0] : '—';
+    const reviews = (c.reviews || '').replace(/[^\d,]/g, '') || '—';
+    return `<div class="cand-row ${checked ? 'chosen' : ''}">
+      <input type="checkbox" data-asin="${c.asin}" ${checked ? 'checked' : ''}>
+      <img class="cand-thumb" src="${c.thumb || ''}" loading="lazy" onerror="this.style.visibility='hidden'">
+      <div class="cand-title">${title}</div>
+      <div>${c.asin}<div class="cand-meta">#${i + 1} · 第${c.page}页</div></div>
+      <div>${price}</div>
+      <div>${rating}</div>
+      <div>${reviews}</div>
+    </div>`;
+  }).join('');
+  box.innerHTML = `<div class="cand-head">
+    <div>勾选</div><div>主图</div><div>产品标题</div><div>ASIN</div><div>价格</div><div>评分</div><div>评论数</div>
+  </div>${rows}`;
+  box.style.display = 'block';
+  actions.style.display = 'flex';
+
+  // 事件：勾选变化 → 同步 chosenSet + 样式；手动勾选即取消「自动选前 5」的联动
+  box.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.onchange = () => {
+      const asin = cb.dataset.asin;
+      if (cb.checked) { chosenSet.add(asin); } else { chosenSet.delete(asin); }
+      cb.closest('.cand-row').classList.toggle('chosen', cb.checked);
+      document.getElementById('checkTop5').checked = false;
+      updateChosenCount();
+    };
+  });
+  updateChosenCount();
+}
+
+function updateChosenCount() {
+  document.getElementById('chosenCount').textContent = chosenSet.size;
+}
+
+document.getElementById('btnChooseTop5').onclick = () => {
+  chosenSet = new Set(pickDefaultTopN(candidates, 5).map(c => c.asin));
+  renderCandidates();
+};
+document.getElementById('btnChooseNone').onclick = () => {
+  document.getElementById('checkTop5').checked = false;
+  chosenSet.clear();
+  renderCandidates();
+};
+
+// discover 模式：如果有勾选的候选，把它们塞进 asins 字段发给后端
+function getSubmitAsins() {
+  if (mode === 'discover' && chosenSet.size > 0) {
+    if (chosenSet.size > 10) {
+      alert('单次最多 10 个 ASIN，请手动取消或分批处理');
+      return null;
+    }
+    return [...chosenSet].join(', ');
+  }
+  return null;  // 让后端按空 asins 走原来的 discover 流程
+}
+</script>
+<div class="modal-overlay" id="tplModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tplTitle">
+    <div class="modal-head">
+      <div>
+        <h3 id="tplTitle">竞品 LISTING 分析模板</h3>
+        <div class="hint">导出 Excel 的结构示意 · 一个 ASIN 占一列，超过 6 个自动拆工作表 · 图中为示例数据</div>
+      </div>
+      <button class="modal-close" id="tplClose" aria-label="关闭">×</button>
+    </div>
+    <div class="modal-body">
+      <table class="tpl">
+        <colgroup><col style="width:120px"><col style="width:150px"><col></colgroup>
+        <tr><td class="la" rowspan="1">竞争对手产品图片</td><td></td><td class="img">主图（示例）</td></tr>
+        <tr><td class="la">对手品牌-简称</td><td></td><td class="dt">品牌名（示例）</td></tr>
+        <tr><td class="la">Asin</td><td></td><td class="dt">B0C3QZ7SNF</td></tr>
+        <tr><td class="la">对手选择原因简述</td><td></td><td class="dt">BSR Top 选品 / 手动指定</td></tr>
+        <tr><td class="la">开售日</td><td></td><td class="dtc">2024-03-15</td></tr>
+        <tr><td class="la" rowspan="5">促销设置</td><td class="lb">近30天销量</td><td class="dtc">1,234</td></tr>
+        <tr><td class="lb">最终到手价</td><td class="dtc">$29.99</td></tr>
+        <tr><td class="lb">划线价</td><td class="dtc">$39.99</td></tr>
+        <tr><td class="lb">标价</td><td class="dtc">$39.99</td></tr>
+        <tr><td class="lb">折扣</td><td class="dtc">25.0%</td></tr>
+        <tr><td class="la" rowspan="3">标记与<br>评分情况</td><td class="lb">AC 标</td><td class="dtc">有</td></tr>
+        <tr><td class="lb">绿标</td><td class="dtc">无</td></tr>
+        <tr><td class="lb">评分水平</td><td class="dtc">4.7 / 2,156</td></tr>
+        <tr><td class="la" rowspan="3">变体 &amp;<br>配件 &amp;<br>捆绑</td><td class="lb">变体情况 截图</td><td class="img">变体截图（示例）</td></tr>
+        <tr><td class="lb">变体情况 补充说明</td><td class="dt">颜色 3 / 尺寸 2，共 6 个变体</td></tr>
+        <tr><td class="lb">捆绑/配件 补充说明</td><td class="wait">待补充</td></tr>
+        <tr><td class="la" rowspan="7">主图</td><td class="lb">1-图</td><td class="img">主图 1</td></tr>
+        <tr><td class="lb">2-图</td><td class="img">主图 2</td></tr>
+        <tr><td class="lb">3-图</td><td class="img">主图 3</td></tr>
+        <tr><td class="lb">4-图</td><td class="img">主图 4</td></tr>
+        <tr><td class="lb">5-图</td><td class="img">主图 5</td></tr>
+        <tr><td class="lb">6-图</td><td class="img">主图 6</td></tr>
+        <tr><td class="lb">7-图</td><td class="img">主图 7</td></tr>
+        <tr><td class="la" rowspan="5">A+ 图</td><td class="lb">1-A+</td><td class="img">A+ 图 1</td></tr>
+        <tr><td class="lb">2-A+</td><td class="img">A+ 图 2</td></tr>
+        <tr><td class="lb">3-A+</td><td class="img">A+ 图 3</td></tr>
+        <tr><td class="lb">4-A+</td><td class="img">A+ 图 4</td></tr>
+        <tr><td class="lb">5-A+</td><td class="img">A+ 图 5</td></tr>
+        <tr><td class="la" rowspan="2">详情页<br>文案</td><td class="lb">商品主标题</td><td class="dt">Cisily Sponge Holder for Kitchen Sink, Sink Organizer with Brush Holder</td></tr>
+        <tr><td class="lb">商品亮点</td><td class="dt">Black Kitchen Countertop Organizers and Storage Essentials, Rustproof 304 Stainless Steel</td></tr>
+        <tr><td class="la" rowspan="5">对手五行</td><td></td><td class="dt">卖点 1：……</td></tr>
+        <tr><td></td><td class="dt">卖点 2：……</td></tr>
+        <tr><td></td><td class="dt">卖点 3：……</td></tr>
+        <tr><td></td><td class="dt">卖点 4：……</td></tr>
+        <tr><td></td><td class="dt">卖点 5：……</td></tr>
+        <tr><td class="la">分析备注</td><td colspan="2" class="dt">这里记录分析结论、差异点、优化动作等……</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+</body>
+</html>

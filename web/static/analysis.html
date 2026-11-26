@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Listing 评分对照 · 竞品 LISTING 分析器</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<script>
+/* 首帧前确定主题，避免闪烁 */
+(function(){try{var t=localStorage.getItem('theme');if(!t){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#fff; --text:#1f2329; --sub:#6b7280; --line:#e3e6eb;
+    --accent:#2563eb; --accent-soft:#eaf1ff; --ok:#0f9d58; --warn:#b45309; --log:#f7f8fa;
+    --tag-bg:#EAF1FF; --tag-fg:#2563eb;
+  }
+  :root[data-theme="dark"]{ --bg:#14161a; --card:#1c1f24; --text:#e6e8eb; --sub:#9aa3ad; --line:#2c3037;
+    --accent:#5b8def; --accent-soft:#1e2a44; --ok:#34d399; --warn:#fbbf24; --log:#171a1e;
+    --tag-bg:#1e2a44; --tag-fg:#9db8ff; }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme]){ --bg:#14161a; --card:#1c1f24; --text:#e6e8eb; --sub:#9aa3ad; --line:#2c3037;
+      --accent:#5b8def; --accent-soft:#1e2a44; --ok:#34d399; --warn:#fbbf24; --log:#171a1e;
+      --tag-bg:#1e2a44; --tag-fg:#9db8ff; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1200px;margin:0 auto;padding:26px 20px 60px}
+  header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand img{width:38px;height:38px;flex-shrink:0}
+  header h1{font-size:21px;margin:0}
+  header p{margin:2px 0 0;color:var(--sub);font-size:12.5px}
+  .head-actions{display:flex;align-items:center;gap:10px;flex-shrink:0}
+  .theme-btn{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--card);
+    color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;
+    transition:border-color .15s ease,color .15s ease}
+  .theme-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .theme-btn svg{width:20px;height:20px}
+  .theme-btn .icon-sun{display:none}
+  :root[data-theme="dark"] .theme-btn .icon-sun{display:block}
+  :root[data-theme="dark"] .theme-btn .icon-moon{display:none}
+  .theme-transitioning,.theme-transitioning *{transition:background-color .25s ease,color .25s ease,border-color .25s ease,fill .25s ease,stroke .25s ease !important}
+  .btn-ghost{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:8px;
+    border:1px solid var(--line);background:var(--card);color:var(--sub);cursor:pointer;
+    font-size:12.5px;text-decoration:none;white-space:nowrap;transition:border-color .15s ease,color .15s ease}
+  .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+  button.primary{padding:9px 20px;border:0;border-radius:8px;background:var(--accent);
+    color:#fff;font-size:13.5px;font-weight:600;cursor:pointer}
+  button.primary:disabled{opacity:.55;cursor:not-allowed}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px}
+  .toolbar{margin-top:20px;padding:14px 16px;display:flex;justify-content:space-between;
+    align-items:center;gap:14px;flex-wrap:wrap}
+  .toolbar-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .pill{font:12px ui-monospace,Consolas,monospace;padding:3px 10px;border-radius:99px;
+    background:var(--accent-soft);color:var(--accent)}
+  .hint{font-size:12px;color:var(--sub)}
+  .status{margin-top:10px;font-size:12.5px;color:var(--sub);min-height:19px}
+  .err{color:#c0392b}
+  .summary{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .sum-chip{font-size:12.5px;padding:4px 12px;border-radius:99px;background:var(--card);
+    border:1px solid var(--line);color:var(--sub)}
+  .sum-chip b{font-family:ui-monospace,Consolas,monospace;color:var(--text)}
+  .board{margin-top:14px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card)}
+  .board-head,.asin-row{display:grid;grid-template-columns:300px repeat(3,minmax(0,1fr))}
+  .board-head>div{padding:10px 14px;font-size:12px;font-weight:600;color:var(--sub);
+    background:var(--log);border-bottom:1px solid var(--line)}
+  .board-head>div:not(:last-child){border-right:1px solid var(--line)}
+  .asin-block{border-bottom:1px solid var(--line)}
+  .asin-block:last-child{border-bottom:0}
+  .asin-row{cursor:pointer;transition:background .12s ease}
+  .asin-row:hover{background:var(--accent-soft)}
+  .who{display:flex;gap:12px;padding:14px;align-items:flex-start;border-right:1px solid var(--line);min-width:0}
+  .thumb{width:64px;height:64px;object-fit:contain;border:1px solid var(--line);border-radius:8px;
+    background:var(--card);flex-shrink:0}
+  .thumb.none{display:flex;align-items:center;justify-content:center;color:var(--sub);font-size:11px}
+  .who-body{min-width:0}
+  .asin-code{font:12.5px ui-monospace,Consolas,monospace;color:var(--accent);font-weight:600}
+  .brandname{font-size:12px;color:var(--sub);margin-top:2px}
+  .ptitle{font-size:12px;line-height:1.45;color:var(--text);margin-top:4px;
+    overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .expand-hint{font-size:11px;color:var(--sub);margin-top:6px}
+  .mod{padding:14px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:7px;min-width:0}
+  .mod:last-child{border-right:0}
+  .mod-label{font-size:11.5px;color:var(--sub);font-weight:600}
+  .mod-score{display:flex;align-items:baseline;gap:5px}
+  .big{font:800 26px/1 ui-monospace,Consolas,monospace}
+  .of{font-size:11.5px;color:var(--sub)}
+  .badge{font-size:10.5px;padding:1px 7px;border-radius:99px;background:var(--accent-soft);color:var(--accent)}
+  .badge.b-good{background:var(--tag-bg);color:var(--ok)}
+  .badge.b-low{background:var(--tag-bg);color:var(--warn)}
+  .sc-good{color:var(--ok)}.sc-mid{color:var(--accent)}.sc-low{color:var(--warn)}
+  .mod-meta{font-size:11.5px;line-height:1.5;color:var(--sub)}
+  .mod-empty{font-size:12px;color:var(--sub)}
+  .bar{margin-top:2px;height:5px;border-radius:99px;overflow:hidden;background:var(--line)}
+  .bar i{display:block;height:100%;border-radius:99px;background:var(--accent)}
+  .bar i.good{background:var(--ok)}.bar i.low{background:var(--warn)}
+  .asin-detail{display:none;padding:0 14px 16px;background:var(--log);border-top:1px dashed var(--line)}
+  .asin-detail.open{display:block}
+  .detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding-top:14px}
+  .detail-card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px}
+  .detail-card h4{margin:0 0 10px;font-size:12.5px;font-weight:600;color:var(--sub)}
+  .detail-card h4 .muted{font-weight:400}
+  .muted{color:var(--sub);font-size:11.5px}
+  .sub-row{margin-top:9px}
+  .sub-top{display:flex;justify-content:space-between;gap:8px;font-size:12px}
+  .sub-top b{font-weight:600}
+  .sub-top span{font-family:ui-monospace,Consolas,monospace;color:var(--sub);flex-shrink:0}
+  .sub-reason{margin-top:4px;font-size:11.5px;line-height:1.5;color:var(--sub)}
+  .issues{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+  .issue{display:flex;gap:7px;font-size:11.5px;line-height:1.5;margin-top:6px}
+  .issue small{display:block;color:var(--sub)}
+  .dot{width:7px;height:7px;flex-shrink:0;margin-top:6px;border-radius:99px;background:var(--line)}
+  .dot.high{background:#c0392b}.dot.medium{background:var(--warn)}
+  .vision{margin-top:12px;border-top:1px dashed var(--line);padding-top:8px}
+  .vision-head{font-size:12px;font-weight:600;color:var(--sub)}
+  .vision-head b{color:var(--text);font-family:ui-monospace,Consolas,monospace}
+  .obs{font-size:11.5px;color:var(--sub);margin-top:4px}
+  .facts{margin-top:12px;padding:12px;background:var(--card);border:1px solid var(--line);border-radius:10px}
+  .facts h4{margin:0 0 10px;font-size:12.5px;font-weight:600;color:var(--sub)}
+  .facts-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px 14px}
+  .fact-k{font-size:11px;color:var(--sub)}
+  .fact-v{margin-top:2px;font-size:12.5px;font-family:ui-monospace,Consolas,monospace;word-break:break-all}
+  .gaps{margin-top:10px;display:flex;gap:6px;flex-wrap:wrap}
+  .gap-chip{font-size:11px;padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent)}
+  .detail-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;padding-top:9px;border-top:1px dashed var(--line)}
+  .view-btn{font-size:11.5px;padding:4px 10px;border-radius:7px;border:1px solid var(--line);
+    background:var(--card);color:var(--accent);cursor:pointer;
+    transition:border-color .12s ease,background .12s ease}
+  .view-btn:hover{border-color:var(--accent);background:var(--accent-soft)}
+  .modal{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;
+    padding:24px;background:rgba(15,18,22,.55)}
+  .modal.open{display:flex}
+  .modal-card{width:100%;max-width:960px;max-height:84vh;overflow:auto;background:var(--card);
+    border:1px solid var(--line);border-radius:14px;padding:20px 22px}
+  .modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+  .modal-head h3{margin:0;font-size:16px}
+  .modal-close{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--card);
+    color:var(--sub);font-size:18px;line-height:1;cursor:pointer;flex-shrink:0}
+  .modal-close:hover{border-color:var(--accent);color:var(--accent)}
+  .kv{margin-top:10px}
+  .kv b{display:block;margin-bottom:3px;font-size:11.5px;color:var(--sub);font-weight:600}
+  .text-block{background:var(--log);border:1px solid var(--line);border-radius:10px;padding:12px;
+    font-size:13.5px;line-height:1.8;white-space:pre-wrap;word-break:break-word}
+  .bullet-list{margin:0;padding-left:20px;font-size:13.5px;line-height:1.85}
+  .bullet-list li{margin-bottom:6px}
+  .img-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+  .img-grid img{width:100%;height:170px;object-fit:contain;background:var(--log);
+    border:1px solid var(--line);border-radius:8px;cursor:zoom-in}
+  .lightbox{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;
+    padding:28px;background:rgba(0,0,0,.85);cursor:zoom-out}
+  .lightbox.open{display:flex}
+  .lightbox img{max-width:92vw;max-height:88vh;object-fit:contain}
+  .bi-head{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:2px 0 8px;font-size:11px;
+    color:var(--sub);border-bottom:1px solid var(--line)}
+  .bi-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:9px 0;border-bottom:1px solid var(--line)}
+  .bi-row:last-of-type{border-bottom:0}
+  .bi-en,.bi-zh{font-size:13px;line-height:1.7;word-break:break-word}
+  .bi-idx{color:var(--sub);margin-right:5px}
+  .bi-note{margin-top:12px;font-size:11px;color:var(--sub)}
+  .ptitle-zh{margin-top:2px;font-size:11.5px;line-height:1.45;color:var(--sub);
+    overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  @media (max-width:980px){
+    .board-head{display:none}
+    .asin-row{grid-template-columns:1fr}
+    .who{border-right:0;border-bottom:1px solid var(--line)}
+    .mod{border-right:0;border-top:1px solid var(--line)}
+    .detail-grid{grid-template-columns:1fr}
+    .facts-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .bi-head,.bi-row{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <img src="favicon.svg" alt="logo">
+      <div>
+        <h1>Listing 评分对照</h1>
+        <p id="subtitle">正在读取采集资料…</p>
+      </div>
+    </div>
+    <div class="head-actions">
+      <a class="btn-ghost" href="/">← 返回采集</a>
+      <button class="theme-btn" id="themeBtn" type="button" aria-label="切换暗色/亮色" title="切换暗色/亮色">
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="toolbar card">
+    <div class="toolbar-left">
+      <span class="pill" id="collectionPill">—</span>
+      <span class="hint">标题 / 五点 / 图片各自独立打分，不合成链接总分；价格、评分、BSR 只做事实卡</span>
+    </div>
+    <button type="button" class="primary" id="btnRun">开始评分</button>
+  </div>
+  <div class="status" id="status"></div>
+  <div class="summary" id="summary"></div>
+  <div class="board" id="board"></div>
+</div>
+
+<div class="modal" id="modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 id="modalTitle"></h3>
+      <button type="button" class="modal-close" id="modalClose" aria-label="关闭">×</button>
+    </div>
+    <div id="modalBody"></div>
+  </div>
+</div>
+<div class="lightbox" id="lightbox"><img id="lightboxImg" alt=""></div>
+
+<script>
+const MODULE_LABELS = { title: '标题', bullets: '五点', images: '图片' };
+const cid = new URLSearchParams(location.search).get('collection') || '';
+let collection = null;
+let report = null;
+let running = false;
+
+const board = document.getElementById('board');
+const statusEl = document.getElementById('status');
+const btnRun = document.getElementById('btnRun');
+const modal = document.getElementById('modal');
+const modalTitle = document.getElementById('modalTitle');
+const modalBody = document.getElementById('modalBody');
+const lightbox = document.getElementById('lightbox');
+const lightboxImg = document.getElementById('lightboxImg');
+let metaMap = {};
+let transCache = {};
+let viewSeq = 0;
+
+// 主题切换（与首页一致）
+document.getElementById('themeBtn').addEventListener('click', () => {
+  const cur = document.documentElement.getAttribute('data-theme') || 'light';
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.classList.add('theme-transitioning');
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem('theme', next); } catch (e) {}
+  setTimeout(() => document.documentElement.classList.remove('theme-transitioning'), 350);
+});
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+function dash(v) { return (v === null || v === undefined || v === '') ? '—' : v; }
+function level(v) { return v >= 80 ? 'good' : (v >= 60 ? 'mid' : 'low'); }
+function levelText(lv) { return lv === 'good' ? '良好' : (lv === 'mid' ? '中等' : '偏弱'); }
+function scoreOf(mod, key) {
+  if (!mod) return null;
+  const s = key === 'images' ? mod.rule_score : mod.score;
+  return (mod.status === 'skipped' || s == null) ? null : s;
+}
+function fileUrl(rel) {
+  return `/api/collections/${encodeURIComponent(cid)}/files/` +
+    String(rel).split('/').map(encodeURIComponent).join('/');
+}
+function fmtTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function subRows(subs) {
+  return (subs || []).map(s => {
+    const pct = s.max ? Math.max(0, Math.min(100, s.score / s.max * 100)) : 0;
+    return `<div class="sub-row">
+      <div class="sub-top"><b>${esc(s.name)}</b><span>${s.score} / ${s.max}</span></div>
+      <div class="bar"><i class="${pct >= 80 ? 'good' : (pct < 60 ? 'low' : '')}" style="width:${pct}%"></i></div>
+      <div class="sub-reason">${esc(s.reason)}</div>
+    </div>`;
+  }).join('');
+}
+
+function issueList(issues) {
+  if (!issues || !issues.length) return '';
+  return `<div class="issues">${issues.map(i => `
+    <div class="issue"><span class="dot ${esc(i.severity)}"></span>
+      <div>${esc(i.finding)}<small>建议：${esc(i.fix)}</small></div>
+    </div>`).join('')}</div>`;
+}
+
+function modCell(key, mod) {
+  const label = MODULE_LABELS[key];
+  if (!mod) {
+    return `<div class="mod"><div class="mod-label">${label}</div><div class="mod-empty">未评分</div></div>`;
+  }
+  const s = scoreOf(mod, key);
+  if (s == null) {
+    const why = (mod.issues || []).map(i => i.finding).join('；') || '未采集到可用数据';
+    return `<div class="mod"><div class="mod-label">${label}</div>
+      <div class="mod-empty">无法评分：${esc(why)}</div></div>`;
+  }
+  const lv = level(s);
+  let meta = '';
+  if (key === 'images') {
+    const ev = mod.evidence || {};
+    meta = `<div class="mod-meta">主图 ${dash(ev.main)} 张 · A+ ${dash(ev.aplus)} 张</div>`;
+    if (mod.vision && mod.vision.score != null) {
+      meta += `<div class="mod-meta">语义 <b class="sc-${level(mod.vision.score)}">${mod.vision.score}</b>/100</div>`;
+    } else if (mod.vision && mod.vision.status === 'skipped') {
+      meta += `<div class="mod-meta">语义评审未启用</div>`;
+    }
+  } else {
+    const first = (mod.issues || [])[0];
+    meta = `<div class="mod-meta">${esc(first ? first.finding : '无高优先级问题')}</div>`;
+  }
+  return `<div class="mod">
+    <div class="mod-label">${label}</div>
+    <div class="mod-score"><span class="big sc-${lv}">${s}</span><span class="of">/100</span>
+      <span class="badge b-${lv}">${levelText(lv)}</span></div>
+    <div class="bar"><i class="${lv}" style="width:${Math.max(0, Math.min(100, s))}%"></i></div>
+    ${meta}
+  </div>`;
+}
+
+function factsHtml(f, gapsHtml) {
+  f = f || {};
+  const bsr = f.bsr_top ? `#${f.bsr_top.rank} ${f.bsr_top.category || ''}` : '—';
+  const rows = [
+    ['价格', dash(f.price)],
+    ['划线价', dash(f.list_price)],
+    ['折扣', f.discount != null ? Math.round(f.discount * 100) + '%' : '—'],
+    ['评分', dash(f.rating)],
+    ['评论数', dash(f.reviews)],
+    ['BSR', bsr],
+    ['近30天销量', dash(f.sales_30d)],
+    ['开售日', dash(f.date_first_available)],
+    ['变体数', dash(f.variations)],
+    ['AC 标', f.ac_badge ? '有' : '无'],
+    ['Climate 标', f.climate_badge ? '有' : '无'],
+    ['品牌', dash(f.brand)],
+  ];
+  return `<div class="facts"><h4>事实卡（不打分）</h4><div class="facts-grid">${
+    rows.map(([k, v]) => `<div><div class="fact-k">${k}</div><div class="fact-v">${esc(v)}</div></div>`).join('')
+  }</div>${gapsHtml || ''}</div>`;
+}
+
+function visionHtml(v) {
+  if (!v) return '';
+  if (v.score != null) {
+    return `<div class="vision">
+      <div class="vision-head">多模态语义分 <b>${v.score}</b>/100 <span class="muted">（独立参考，不合成）</span></div>
+      ${subRows(v.subs)}
+      ${(v.observations || []).map(o => `<div class="obs">· ${esc(o)}</div>`).join('')}
+    </div>`;
+  }
+  if (v.status === 'skipped') {
+    return `<div class="vision"><div class="muted">语义评审未启用：${esc(v.reason || '')}</div></div>`;
+  }
+  if (v.status === 'failed') {
+    return `<div class="vision"><div class="muted">语义评审失败：${esc(v.reason || '')}</div></div>`;
+  }
+  return '';
+}
+
+function detailHtml(item, meta) {
+  meta = meta || {};
+  const images = meta.images || {};
+  const actions = {
+    title: `<div class="detail-actions">
+      <button type="button" class="view-btn" data-view="title" data-asin="${esc(item.asin)}">查看完整标题</button>
+    </div>`,
+    bullets: `<div class="detail-actions">
+      <button type="button" class="view-btn" data-view="bullets" data-asin="${esc(item.asin)}">查看完整五点</button>
+    </div>`,
+    images: `<div class="detail-actions">
+      <button type="button" class="view-btn" data-view="main" data-asin="${esc(item.asin)}">查看主图（${(images.main || []).length}）</button>
+      <button type="button" class="view-btn" data-view="aplus" data-asin="${esc(item.asin)}">查看 A+ 图（${(images.aplus || []).length}）</button>
+    </div>`,
+  };
+  const cards = ['title', 'bullets', 'images'].filter(k => item[k]).map(k => {
+    const mod = item[k];
+    const s = scoreOf(mod, k);
+    return `<div class="detail-card">
+      <h4>${MODULE_LABELS[k]}${s != null ? ` <span class="muted">${s} / 100</span>` : ''}</h4>
+      ${subRows(mod.subs)}
+      ${issueList(mod.issues)}
+      ${k === 'images' ? visionHtml(mod.vision) : ''}
+      ${actions[k] || ''}
+    </div>`;
+  }).join('');
+
+  const gaps = (item.data_gaps || []).length
+    ? `<div class="gaps">${item.data_gaps.map(g => `<span class="gap-chip">${esc(g)}</span>`).join('')}</div>`
+    : '';
+  return `<div class="asin-detail">
+    <div class="detail-grid">${cards}</div>
+    ${factsHtml(item.facts, gaps)}
+  </div>`;
+}
+
+function block(item, meta) {
+  meta = meta || {};
+  const thumbs = (meta.images || {}).main || [];
+  const thumbHtml = thumbs.length
+    ? `<img class="thumb" src="${fileUrl(thumbs[0])}" alt="主图" loading="lazy" onerror="this.style.visibility='hidden'">`
+    : `<div class="thumb none">无主图</div>`;
+  const title = meta.title_main || meta.title || '';
+  return `<div class="asin-block">
+    <div class="asin-row" title="点击展开明细">
+      <div class="who">
+        ${thumbHtml}
+        <div class="who-body">
+          <div class="asin-code">${esc(item.asin)}</div>
+          <div class="brandname">${esc(meta.brand || '品牌未知')}</div>
+          <div class="ptitle">${esc(title)}</div>
+          <div class="ptitle-zh" data-zh="${esc(item.asin)}"></div>
+          <div class="expand-hint">点击展开明细 ▾</div>
+        </div>
+      </div>
+      ${modCell('title', item.title)}
+      ${modCell('bullets', item.bullets)}
+      ${modCell('images', item.images)}
+    </div>
+    ${detailHtml(item, meta)}
+  </div>`;
+}
+
+function render() {
+  const items = report.items || [];
+  const metaBy = {};
+  (collection.items || []).forEach(x => { metaBy[x.asin] = x; });
+  metaMap = metaBy;
+
+  const avgChips = ['title', 'bullets', 'images'].map(k => {
+    const vals = items.map(it => scoreOf(it[k], k)).filter(v => v != null);
+    const avg = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+    return `<span class="sum-chip">${MODULE_LABELS[k]}均分 <b>${avg == null ? '—' : avg}</b></span>`;
+  }).join('');
+  document.getElementById('summary').innerHTML =
+    `<span class="sum-chip">${items.length} 个 ASIN</span>` + avgChips +
+    `<span class="hint">点击任意一行展开子项与问题</span>`;
+
+  board.innerHTML = `<div class="board-head">
+    <div>竞品（主图 / 品牌 / 标题）</div><div>标题</div><div>五点</div><div>图片</div>
+  </div>` + items.map(it => block(it, metaBy[it.asin])).join('');
+
+  board.querySelectorAll('.asin-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const detail = row.nextElementSibling;
+      if (detail) detail.classList.toggle('open');
+    });
+  });
+
+  board.querySelectorAll('[data-view]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      showView(btn.dataset.view, btn.dataset.asin);
+    });
+  });
+
+  primeTranslations(items);
+}
+
+function openModal(title, html) {
+  viewSeq++;
+  modalTitle.textContent = title;
+  modalBody.innerHTML = html;
+  modal.classList.add('open');
+  modalBody.querySelectorAll('img[data-full]').forEach(img => {
+    img.addEventListener('click', () => {
+      lightboxImg.src = img.dataset.full;
+      lightbox.classList.add('open');
+    });
+  });
+}
+
+function closeModal() {
+  viewSeq++;
+  modal.classList.remove('open');
+}
+
+function showView(kind, asin) {
+  if (kind === 'title' || kind === 'bullets') {
+    openBilingual(kind, asin);
+    return;
+  }
+  const meta = metaMap[asin] || {};
+  const images = meta.images || {};
+  const isAplus = kind === 'aplus';
+  const list = isAplus ? (images.aplus || []) : (images.main || []);
+  const label = isAplus ? 'A+ 图' : '主图';
+  if (!list.length) {
+    return openModal(`${label} · ${asin}`, `<div class="text-block">未采集到${label}</div>`);
+  }
+  openModal(`${label} · ${asin}（${list.length} 张）`,
+    `<div class="img-grid">${list.map(rel => {
+      const url = fileUrl(rel);
+      return `<img src="${url}" data-full="${url}" alt="${label}" loading="lazy">`;
+    }).join('')}</div>`);
+}
+
+async function fetchTranslate(asin) {
+  const res = await fetch(`/api/collections/${encodeURIComponent(cid)}/translate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ asin }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || ('HTTP ' + res.status));
+  }
+  return res.json();
+}
+
+function applyRowZh(asin, trans) {
+  const el = board.querySelector(`[data-zh="${asin}"]`);
+  if (el && trans && trans.title_zh) el.textContent = trans.title_zh;
+}
+
+function biRow(label, en, zh) {
+  return `<div class="bi-row">
+    <div class="bi-en"><span class="bi-idx">${esc(label)}</span>${esc(en)}</div>
+    <div class="bi-zh">${esc(zh || '')}</div>
+  </div>`;
+}
+
+function renderBilingual(kind, meta, trans) {
+  const note = '<div class="bi-note">机器翻译，仅供理解，以英文原文为准。</div>';
+  if (kind === 'title') {
+    const rows = [];
+    if (meta.title_main) rows.push(biRow('主标题', meta.title_main, trans.title_main_zh));
+    if (meta.title_highlights) rows.push(biRow('商品亮点', meta.title_highlights, trans.title_highlights_zh));
+    if (meta.title) rows.push(biRow('完整标题', meta.title, trans.title_zh));
+    if (!rows.length) return '<div class="text-block">未采集到标题</div>';
+    return `<div class="bi-head"><span>英文原文</span><span>中文翻译</span></div>${rows.join('')}${note}`;
+  }
+  const bullets = meta.bullets || [];
+  if (!bullets.length) return '<div class="text-block">未采集到五点描述</div>';
+  const zh = trans.bullets_zh || [];
+  return `<div class="bi-head"><span>英文原文</span><span>中文翻译</span></div>` +
+    bullets.map((b, i) => `<div class="bi-row">
+      <div class="bi-en"><span class="bi-idx">${i + 1}.</span>${esc(b)}</div>
+      <div class="bi-zh">${esc(zh[i] || '')}</div>
+    </div>`).join('') + note;
+}
+
+async function openBilingual(kind, asin) {
+  const meta = metaMap[asin] || {};
+  const heading = `${kind === 'title' ? '标题对照' : '五点对照'} · ${asin}`;
+  openModal(heading, '<div class="text-block muted">正在翻译…</div>');
+  const seq = viewSeq;
+  let trans = transCache[asin];
+  if (!trans) {
+    try {
+      trans = await fetchTranslate(asin);
+      transCache[asin] = trans;
+      applyRowZh(asin, trans);
+    } catch (e) {
+      if (seq === viewSeq) openModal(heading, `<div class="text-block">翻译失败：${esc(e.message)}</div>`);
+      return;
+    }
+  }
+  if (seq !== viewSeq) return;
+  modalBody.innerHTML = renderBilingual(kind, meta, trans);
+}
+
+async function primeTranslations(items) {
+  for (const it of items) {
+    if (transCache[it.asin]) {
+      applyRowZh(it.asin, transCache[it.asin]);
+      continue;
+    }
+    try {
+      const trans = await fetchTranslate(it.asin);
+      transCache[it.asin] = trans;
+      applyRowZh(it.asin, trans);
+    } catch (e) {
+      // 静默失败：不阻塞评分展示，打开对照弹窗时会重试
+    }
+  }
+}
+
+document.getElementById('modalClose').addEventListener('click', closeModal);
+modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+lightbox.addEventListener('click', () => lightbox.classList.remove('open'));
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (lightbox.classList.contains('open')) {
+    lightbox.classList.remove('open');
+    return;
+  }
+  closeModal();
+});
+
+async function loadCollection() {
+  const res = await fetch(`/api/collections/${encodeURIComponent(cid)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function runAnalysis() {
+  if (running || !cid) return;
+  running = true;
+  btnRun.disabled = true;
+  btnRun.textContent = '评分中…';
+  statusEl.textContent = '正在评分（图片语义评审需要视觉模型时耗时更长）…';
+  try {
+    const res = await fetch(`/api/collections/${encodeURIComponent(cid)}/analyses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modules: ['title', 'bullets', 'images'] }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    report = await res.json();
+    render();
+    statusEl.textContent = `已完成 · ${(report.items || []).length} 个 ASIN · ${fmtTime(report.created_at)}`;
+  } catch (e) {
+    statusEl.innerHTML = `<span class="err">评分失败：${esc(e.message)}</span>`;
+  } finally {
+    running = false;
+    btnRun.disabled = false;
+    btnRun.textContent = '重新评分';
+  }
+}
+
+btnRun.addEventListener('click', runAnalysis);
+
+(async function boot() {
+  if (!cid) {
+    statusEl.innerHTML = '<span class="err">缺少资料 ID，请从采集页点击「开始评分」进入</span>';
+    btnRun.disabled = true;
+    return;
+  }
+  document.getElementById('collectionPill').textContent = cid;
+  try {
+    collection = await loadCollection();
+  } catch (e) {
+    statusEl.innerHTML = `<span class="err">读取采集资料失败：${esc(e.message)}</span>`;
+    btnRun.disabled = true;
+    return;
+  }
+  const n = (collection.items || []).length;
+  document.getElementById('subtitle').textContent =
+    `站点 ${collection.site || '—'} · ${n} 个 ASIN · 采集于 ${fmtTime(collection.created_at)}`;
+  await runAnalysis();
+})();
+</script>
+</body>
+</html>
