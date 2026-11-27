@@ -85,3 +85,36 @@ def load_collection(outdir):
     if not isinstance(payload.get("items"), list) or not payload.get("collection_id"):
         raise ValueError("采集资料包格式无效")
     return payload
+
+
+def list_collections(output_root):
+    """列出已完成资料包；manifest 是完成标志，避免把采集到一半的目录计入历史。"""
+    root = Path(output_root)
+    if not root.is_dir():
+        return []
+    rows = []
+    for manifest_path in root.glob(f"*/{MANIFEST_FILE}"):
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            if manifest.get("status") != "done":
+                continue
+            collection_dir = manifest_path.parent
+            request = {}
+            data_path = collection_dir / DATA_FILE
+            if data_path.is_file():
+                with open(data_path, "r", encoding="utf-8") as f:
+                    request = json.load(f).get("request") or {}
+            rows.append({
+                "collection_id": manifest["collection_id"],
+                "site": manifest.get("site"),
+                "source": manifest.get("source"),
+                "created_at": manifest.get("created_at"),
+                "item_count": manifest.get("item_count", 0),
+                "request": request,
+                "has_package": (collection_dir / "打包下载.zip").is_file(),
+            })
+        except (OSError, ValueError, KeyError):
+            continue
+    rows.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    return rows

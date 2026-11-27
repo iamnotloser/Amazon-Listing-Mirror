@@ -66,6 +66,7 @@ def _worker():
                 Q.task_done()
                 continue
             job["status"] = "running"
+            job["started_at"] = time.time()
             job["logs"].append("开始执行")
 
         def progress(msg):
@@ -114,11 +115,20 @@ def _worker():
                         "collection_id": result["collection_id"],
                         "data": f"/api/collections/{result['collection_id']}",
                         "package": f"/api/collections/{result['collection_id']}/package",
+                        "success_asins": result.get("success_asins", []),
+                        "failed_asins": result.get("failed_asins", []),
                     }
         except Exception as e:
             with LOCK:
                 JOBS[job_id]["status"] = "error"
                 JOBS[job_id]["error"] = f"{type(e).__name__}: {e}"
+                success_asins = getattr(e, "success_asins", [])
+                failed_asins = getattr(e, "failed_asins", [])
+                if success_asins or failed_asins:
+                    JOBS[job_id]["result"] = {
+                        "success_asins": success_asins,
+                        "failed_asins": failed_asins,
+                    }
         finally:
             with LOCK:
                 JOBS[job_id]["finished_at"] = time.time()
@@ -145,6 +155,12 @@ def favicon():
 def analysis_page():
     """独立评分页：?collection=xxx 载入指定采集结果。"""
     return FileResponse(STATIC / "analysis.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/history")
+def history_page():
+    """采集与评分历史；数据直接来自 output 中已落盘的资料包。"""
+    return FileResponse(STATIC / "history.html", headers={"Cache-Control": "no-store"})
 
 
 @app.post("/api/jobs")
@@ -202,8 +218,12 @@ def get_job(job_id: str):
         job = JOBS.get(job_id)
         if not job:
             raise HTTPException(404, "任务不存在")
+        elapsed = None
+        if job.get("started_at"):
+            elapsed = round((job.get("finished_at") or time.time()) - job["started_at"], 1)
         return {"status": job["status"], "logs": job["logs"],
-                "result": job["result"], "error": job["error"]}
+                "result": job["result"], "error": job["error"],
+                "elapsed_seconds": elapsed}
 
 
 @app.get("/api/download/{job_id}")
@@ -217,6 +237,27 @@ def download(job_id: str):
         raise HTTPException(404, "打包文件不存在")
     return FileResponse(path, filename=f"竞品LISTING分析_{job_id}.zip",
                         media_type="application/zip")
+
+
+@app.get("/api/collections")
+def list_collections():
+    """采集历史列表，只返回摘要，不加载图片。"""
+    return {"items": collection_store.list_collections(OUTPUT)}
+
+
+@app.get("/api/analyses")
+def list_all_analyses():
+    """跨资料包的评分历史，用于统一历史记录页。"""
+    rows = []
+    for collection in collection_store.list_collections(OUTPUT):
+        cdir = OUTPUT / collection["collection_id"]
+        for item in analysis_runner.list_analyses(cdir):
+            rows.append({**item, "collection_id": collection["collection_id"],
+                         "site": collection.get("site"),
+                         "source": collection.get("source"),
+                         "request": collection.get("request") or {}})
+    rows.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    return {"items": rows}
 
 
 @app.get("/api/collections/{collection_id}")

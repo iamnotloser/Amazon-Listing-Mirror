@@ -188,6 +188,7 @@
     </div>
     <div class="head-actions">
       <a class="btn-ghost" href="/">← 返回采集</a>
+      <a class="btn-ghost" href="/history">历史记录</a>
       <button class="theme-btn" id="themeBtn" type="button" aria-label="切换暗色/亮色" title="切换暗色/亮色">
         <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
@@ -220,7 +221,9 @@
 
 <script>
 const MODULE_LABELS = { title: '标题', bullets: '五点', images: '图片' };
-const cid = new URLSearchParams(location.search).get('collection') || '';
+const pageParams = new URLSearchParams(location.search);
+const cid = pageParams.get('collection') || '';
+const initialAnalysisId = pageParams.get('analysis') || '';
 let collection = null;
 let report = null;
 let running = false;
@@ -620,6 +623,21 @@ async function loadCollection() {
   return res.json();
 }
 
+async function loadAnalysis(analysisId) {
+  const res = await fetch(`/api/collections/${encodeURIComponent(cid)}/analyses/${encodeURIComponent(analysisId)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+function showAnalysisInUrl(analysisId) {
+  const url = new URL(location.href);
+  url.searchParams.set('analysis', analysisId);
+  window.history.replaceState(null, '', url);
+}
+
 async function runAnalysis() {
   if (running || !cid) return;
   running = true;
@@ -641,12 +659,13 @@ async function runAnalysis() {
     jobEl.className = 'hint';
     jobEl.textContent = `  任务 #${job_id}`;
     statusEl.appendChild(jobEl);
+    let completedAnalysisId = null;
 
     // 轮询状态，每 2s 查一次；其他接口不受阻塞
     while (true) {
       await new Promise(r => setTimeout(r, 2000));
       const st = await fetch(`/api/jobs/${encodeURIComponent(job_id)}`);
-      if (!st.ok) { statusEl.textContent = '任务状态查询失败'; break; }
+      if (!st.ok) throw new Error('任务状态查询失败');
       const data = await st.json();
       if (data.logs && data.logs.length) {
         const last = data.logs.slice(-1)[0];
@@ -655,19 +674,19 @@ async function runAnalysis() {
           statusEl.appendChild(jobEl.cloneNode(true));
         }
       }
-      if (data.status === 'done') break;
+      if (data.status === 'done') {
+        completedAnalysisId = data.result && data.result.analysis_id;
+        if (!completedAnalysisId) throw new Error('评分完成但未返回结果 ID');
+        break;
+      }
       if (data.status === 'error') {
         throw new Error(data.error || '评分失败');
       }
     }
 
-    // 拉取本次最新评分
-    const list = await fetch(`/api/collections/${encodeURIComponent(cid)}/analyses`);
-    if (!list.ok) throw new Error('评分完成但读取结果失败');
-    const arr = await list.json();
-    const latest = (arr.items || [])[0];
-    if (!latest) throw new Error('评分完成但无结果');
-    report = latest;
+    // 按本次任务返回的 analysis_id 读取完整报告，避免误读列表摘要
+    report = await loadAnalysis(completedAnalysisId);
+    showAnalysisInUrl(report.analysis_id || completedAnalysisId);
     render();
     statusEl.textContent = `已完成 · ${(report.items || []).length} 个 ASIN · ${fmtTime(report.created_at)}`;
   } catch (e) {
@@ -698,6 +717,18 @@ btnRun.addEventListener('click', runAnalysis);
   const n = (collection.items || []).length;
   document.getElementById('subtitle').textContent =
     `站点 ${collection.site || '—'} · ${n} 个 ASIN · 采集于 ${fmtTime(collection.created_at)}`;
+  if (initialAnalysisId) {
+    try {
+      statusEl.textContent = '正在读取历史评分…';
+      report = await loadAnalysis(initialAnalysisId);
+      render();
+      statusEl.textContent = `历史评分 · ${(report.items || []).length} 个 ASIN · ${fmtTime(report.created_at)}`;
+      btnRun.textContent = '重新评分';
+    } catch (e) {
+      statusEl.innerHTML = `<span class="err">读取历史评分失败：${esc(e.message)}</span>`;
+    }
+    return;
+  }
   await runAnalysis();
 })();
 </script>

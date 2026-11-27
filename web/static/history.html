@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>历史记录 · 竞品 LISTING 分析器</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<script>
+(function(){try{var t=localStorage.getItem('theme');if(!t){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<style>
+  :root{--bg:#f5f6f8;--card:#fff;--text:#1f2329;--sub:#6b7280;--line:#e3e6eb;
+    --accent:#2563eb;--accent-soft:#eaf1ff;--log:#f7f8fa;--ok:#0f9d58;
+    --tag-bg:#EAF1FF;--tag-fg:#2563eb;--tag-green-bg:#D1FAE5;--tag-green-fg:#065F46}
+  :root[data-theme="dark"]{--bg:#14161a;--card:#1c1f24;--text:#e6e8eb;--sub:#9aa3ad;--line:#2c3037;
+    --accent:#5b8def;--accent-soft:#1e2a44;--log:#171a1e;--ok:#6ee7a7;
+    --tag-bg:#1e2a44;--tag-fg:#9db8ff;--tag-green-bg:#14351f;--tag-green-fg:#6ee7a7}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 60px}
+  header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:22px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand img{width:38px;height:38px}
+  h1{font-size:22px;margin:0}
+  .brand p{margin:2px 0 0;color:var(--sub);font-size:13px}
+  .head-actions{display:flex;align-items:center;gap:10px;flex-shrink:0}
+  .theme-btn{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+  .theme-btn svg{width:20px;height:20px}
+  .theme-btn .icon-sun{display:none}
+  :root[data-theme="dark"] .theme-btn .icon-sun{display:block}
+  :root[data-theme="dark"] .theme-btn .icon-moon{display:none}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line)}
+  .tabs{display:flex;gap:8px}
+  .tab{padding:8px 14px;border:1px solid var(--line);background:var(--card);border-radius:8px;cursor:pointer;color:var(--sub);font-size:13px}
+  .tab.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
+  .btn-ghost,.btn-primary{display:inline-flex;align-items:center;justify-content:center;padding:7px 12px;border-radius:7px;border:1px solid var(--line);background:var(--card);color:var(--sub);cursor:pointer;font-size:12.5px;text-decoration:none;white-space:nowrap}
+  .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+  .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn-ghost:disabled{opacity:.5;cursor:not-allowed}
+  .status{padding:12px 16px;color:var(--sub);font-size:13px;border-bottom:1px solid var(--line)}
+  .status:empty{display:none}
+  .err{color:#c0392b}
+  .record{display:flex;justify-content:space-between;align-items:center;gap:18px;padding:16px;border-bottom:1px solid var(--line)}
+  .record:last-child{border-bottom:0}
+  .record:hover{background:var(--accent-soft)}
+  .record-main{min-width:0}
+  .record-title{font-weight:600;font-size:14px;word-break:break-all}
+  .record-time{font-size:12px;color:var(--sub);margin-top:2px}
+  .meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .tag{padding:1px 7px;border-radius:5px;background:var(--tag-bg);color:var(--tag-fg);font-size:11px}
+  .tag.green{background:var(--tag-green-bg);color:var(--tag-green-fg)}
+  .request{margin-top:7px;color:var(--sub);font-size:12px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .record-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;flex-shrink:0}
+  .empty{padding:50px 20px;text-align:center;color:var(--sub)}
+  @media (max-width:720px){
+    header{align-items:center}.brand p{display:none}.record{align-items:flex-start;flex-direction:column}
+    .record-actions{justify-content:flex-start}.toolbar{align-items:flex-start;flex-direction:column}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <img src="favicon.svg" alt="logo">
+      <div><h1>历史记录</h1><p>采集资料与评分结果来自磁盘，重启服务后仍可查看</p></div>
+    </div>
+    <div class="head-actions">
+      <a class="btn-ghost" href="/">返回采集</a>
+      <button class="theme-btn" id="themeBtn" type="button" aria-label="切换暗色/亮色">
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="toolbar">
+      <div class="tabs">
+        <button class="tab on" data-tab="collections">采集记录 <span id="collectionCount">0</span></button>
+        <button class="tab" data-tab="analyses">评分记录 <span id="analysisCount">0</span></button>
+      </div>
+      <button class="btn-ghost" id="btnRefresh">刷新</button>
+    </div>
+    <div class="status" id="status">正在读取历史记录…</div>
+    <div id="list"></div>
+  </div>
+</div>
+
+<script>
+let currentTab = 'collections';
+let collections = [];
+let analyses = [];
+const listEl = document.getElementById('list');
+const statusEl = document.getElementById('status');
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmtTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function sourceLabel(source) {
+  return {asin:'按 ASIN', discovery:'关键词发现', demo:'演示资料'}[source] || source || '采集';
+}
+function requestText(request) {
+  request = request || {};
+  const keywords = request.keywords || [];
+  if (keywords.length) return '关键词：' + keywords.join('、');
+  const asins = request.asins || [];
+  if (asins.length) {
+    const shown = asins.slice(0, 5).join('、');
+    return 'ASIN：' + shown + (asins.length > 5 ? ` 等 ${asins.length} 个` : '');
+  }
+  return request.note || '无请求摘要';
+}
+function collectionIdLink(id) {
+  return `/?collection=${encodeURIComponent(id)}`;
+}
+function analysisLink(collectionId, analysisId) {
+  return `/analysis?collection=${encodeURIComponent(collectionId)}&analysis=${encodeURIComponent(analysisId)}`;
+}
+
+function renderCollections() {
+  if (!collections.length) return '<div class="empty">还没有采集记录</div>';
+  return collections.map(c => {
+    const id = c.collection_id;
+    const download = c.has_package
+      ? `<a class="btn-ghost" href="/api/collections/${encodeURIComponent(id)}/package">下载 ZIP</a>` : '';
+    return `<article class="record">
+      <div class="record-main">
+        <div class="record-title">${esc(id)}</div>
+        <div class="record-time">${fmtTime(c.created_at)}</div>
+        <div class="meta">
+          <span class="tag">${esc(c.site || '—')}</span>
+          <span class="tag green">${esc(sourceLabel(c.source))}</span>
+          <span class="tag">${c.item_count || 0} 个 ASIN</span>
+        </div>
+        <div class="request">${esc(requestText(c.request))}</div>
+      </div>
+      <div class="record-actions">
+        <a class="btn-primary" href="${collectionIdLink(id)}">打开资料</a>
+        <a class="btn-ghost" href="/analysis?collection=${encodeURIComponent(id)}">开始评分</a>
+        ${download}
+      </div>
+    </article>`;
+  }).join('');
+}
+
+function renderAnalyses() {
+  if (!analyses.length) return '<div class="empty">还没有评分记录</div>';
+  const moduleNames = {title:'标题', bullets:'五点', images:'图片'};
+  return analyses.map(a => {
+    const modules = (a.modules || []).map(m => moduleNames[m] || m).join(' / ');
+    return `<article class="record">
+      <div class="record-main">
+        <div class="record-title">${esc(a.analysis_id)}</div>
+        <div class="record-time">${fmtTime(a.created_at)} · 所属采集 ${esc(a.collection_id)}</div>
+        <div class="meta">
+          <span class="tag">${esc(a.site || '—')}</span>
+          <span class="tag green">${a.item_count || 0} 个 ASIN</span>
+          <span class="tag">${esc(modules || '全部模块')}</span>
+        </div>
+        <div class="request">${esc(requestText(a.request))}</div>
+      </div>
+      <div class="record-actions">
+        <a class="btn-primary view-analysis" href="${analysisLink(a.collection_id, a.analysis_id)}">查看评分</a>
+        <a class="btn-ghost" href="${collectionIdLink(a.collection_id)}">所属采集</a>
+      </div>
+    </article>`;
+  }).join('');
+}
+
+function render() {
+  document.getElementById('collectionCount').textContent = collections.length;
+  document.getElementById('analysisCount').textContent = analyses.length;
+  listEl.innerHTML = currentTab === 'collections' ? renderCollections() : renderAnalyses();
+}
+
+document.querySelectorAll('.tab').forEach(btn => btn.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+  btn.classList.add('on');
+  currentTab = btn.dataset.tab;
+  render();
+});
+
+async function loadHistory() {
+  const btn = document.getElementById('btnRefresh');
+  btn.disabled = true;
+  statusEl.textContent = '正在读取历史记录…';
+  try {
+    const [cr, ar] = await Promise.all([fetch('/api/collections'), fetch('/api/analyses')]);
+    if (!cr.ok || !ar.ok) throw new Error(`HTTP ${cr.status}/${ar.status}`);
+    collections = (await cr.json()).items || [];
+    analyses = (await ar.json()).items || [];
+    statusEl.textContent = '';
+    render();
+  } catch (e) {
+    statusEl.innerHTML = `<span class="err">读取失败：${esc(e.message)}</span>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+document.getElementById('btnRefresh').onclick = loadHistory;
+
+document.getElementById('themeBtn').onclick = () => {
+  const cur = document.documentElement.getAttribute('data-theme') || 'light';
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem('theme', next); } catch (e) {}
+};
+
+loadHistory();
+</script>
+</body>
+</html>

@@ -114,7 +114,7 @@ def run_asin_job(asins, site_code, outdir, progress=None, use_xiyou=True,
         except Exception as e:
             log(f"西柚连接失败：{e}")
 
-    items = []
+    items, failed = [], []
     with AmazonScraper(site_code) as scraper:
         for i, asin in enumerate(asins, 1):
             log(f"[{i}/{len(asins)}] 抓取 {asin}")
@@ -122,13 +122,17 @@ def run_asin_job(asins, site_code, outdir, progress=None, use_xiyou=True,
                 item = {"asin": asin}
                 items.append(_enrich(item, scraper, img_root, sales_client, site_code, log))
             except Exception as e:
+                failed.append({"asin": asin, "error": str(e)[:160]})
                 log(f"  {asin} 抓取失败：{str(e)[:80]}")
             time.sleep(random.uniform(2.5, 5))
 
     if sales_client:
         sales_client.__exit__(None, None, None)
     if not items:
-        raise RuntimeError("所有 ASIN 都抓取失败，请检查站点或稍后重试")
+        err = RuntimeError("所有 ASIN 都抓取失败，请检查站点或稍后重试")
+        err.success_asins = []
+        err.failed_asins = failed
+        raise err
 
     note = f"生成时间：{time.strftime('%Y-%m-%d %H:%M')}　站点：{site_code}　ASIN 数：{len(items)}"
     if keywords:
@@ -136,8 +140,11 @@ def run_asin_job(asins, site_code, outdir, progress=None, use_xiyou=True,
     if category:
         note += f"　类目：{category}"
     request = {"asins": asins, "keywords": keywords or [], "category": category or ""}
-    return _finish(items, site_code, outdir, {"note": note}, log,
-                   source="discovery" if keywords else "asin", request=request)
+    result = _finish(items, site_code, outdir, {"note": note}, log,
+                     source="discovery" if keywords else "asin", request=request)
+    result["success_asins"] = [item["asin"] for item in items]
+    result["failed_asins"] = failed
+    return result
 
 
 def run_discovery_job(keywords, category, site_code, bsr_max, pages, outdir,
@@ -156,17 +163,27 @@ def run_discovery_job(keywords, category, site_code, bsr_max, pages, outdir,
             raise RuntimeError("没有找到符合 BSR 条件的竞品，请放宽 BSR 上限或换关键词")
 
         log(f"入选 {len(picked)} 个竞品，开始抓取详情")
-        items = []
+        items, failed = [], []
         for i, c in enumerate(picked, 1):
             log(f"[{i}/{len(picked)}] {c['asin']}（BSR #{c.get('bsr_rank')}）")
             try:
                 items.append(_enrich(c, scraper, img_root, None, site_code, log))
             except Exception as e:
+                failed.append({"asin": c["asin"], "error": str(e)[:160]})
                 log(f"  {c['asin']} 抓取失败：{str(e)[:80]}")
+
+    if not items:
+        err = RuntimeError("入选竞品全部抓取失败，请稍后重试")
+        err.success_asins = []
+        err.failed_asins = failed
+        raise err
 
     note = (f"生成时间：{time.strftime('%Y-%m-%d %H:%M')}　站点：{site_code}　"
             f"关键词：{'、'.join(keywords)}　类目：{category or '自动聚类'}　BSR 上限：{bsr_max}")
     request = {"keywords": keywords, "category": category or "", "bsr_max": bsr_max,
                "pages": pages, "want": want}
-    return _finish(items, site_code, outdir, {"note": note}, log,
-                   source="discovery", request=request)
+    result = _finish(items, site_code, outdir, {"note": note}, log,
+                     source="discovery", request=request)
+    result["success_asins"] = [item["asin"] for item in items]
+    result["failed_asins"] = failed
+    return result
