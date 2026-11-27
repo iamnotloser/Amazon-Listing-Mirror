@@ -13,9 +13,12 @@ services:
       - .env
     environment:
       PORT: "8010"
-    # 只绑本机回环，对外统一走 Caddy；保留它是为了服务器上排查问题方便
-    ports:
-      - "127.0.0.1:8010:8010"
+    # 不发布宿主端口，对外统一由 Caddy 网关转发；
+    # 服务器上临时调试时可取消下面两行注释
+    # ports:
+    #   - "127.0.0.1:8010:8010"
+    expose:
+      - "8010"
     volumes:
       # 采集产物（图片/Excel/ZIP）落宿主机，容器重建不丢
       - ./output:/app/output
@@ -28,24 +31,10 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+    networks:
+      - web
 
-  caddy:
-    image: caddy:2-alpine
-    container_name: caddy
-    restart: unless-stopped
-    depends_on:
-      amazon-listing:
-        condition: service_healthy
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      # 证书与 ACME 账户持久化，容器重建不用重新签发
-      - caddy_data:/data
-      - caddy_config:/config
-
-volumes:
-  caddy_data:
-  caddy_config:
+# 与网关及后续项目共用的外部网络，需先执行：docker network create web
+networks:
+  web:
+    external: true

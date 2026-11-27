@@ -1,0 +1,18 @@
+# 统一网关：每个项目一个站点块
+# reverse_proxy 后面写对应项目 compose 里的 container_name:端口
+
+aiproducer.xin {
+	encode zstd gzip
+	reverse_proxy amazon-listing:8010
+}
+
+# www 重定向到主域名（需在 DNS 里加 www 的 A 记录后启用）
+# www.aiproducer.xin {
+# 	redir https://aiproducer.xin{uri} permanent
+# }
+
+# ---- 新增项目时照下面格式追加，域名与容器名换成实际值 ----
+# <子域名>.aiproducer.xin {
+# 	encode zstd gzip
+# 	reverse_proxy <container_name>:8010
+# }
