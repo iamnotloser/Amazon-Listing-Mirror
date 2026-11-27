@@ -76,7 +76,11 @@
     background:var(--card);flex-shrink:0}
   .thumb.none{display:flex;align-items:center;justify-content:center;color:var(--sub);font-size:11px}
   .who-body{min-width:0}
-  .asin-code{font:12.5px ui-monospace,Consolas,monospace;color:var(--accent);font-weight:600}
+  a.asin-code{font:12.5px ui-monospace,Consolas,monospace;color:var(--accent);font-weight:600;
+    text-decoration:none}
+  a.asin-code:hover{text-decoration:underline}
+  a.asin-code .ext{font-size:11px;opacity:.65}
+  .thumb-link{display:block;flex-shrink:0;line-height:0}
   .brandname{font-size:12px;color:var(--sub);margin-top:2px}
   .ptitle{font-size:12px;line-height:1.45;color:var(--text);margin-top:4px;
     overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
@@ -259,6 +263,21 @@ function fileUrl(rel) {
   return `/api/collections/${encodeURIComponent(cid)}/files/` +
     String(rel).split('/').map(encodeURIComponent).join('/');
 }
+// ASIN → 商品链接。优先用采集时记录的 url，缺失时按站点域名拼接
+const SITE_DOMAINS = {
+  US: 'www.amazon.com', CA: 'www.amazon.ca', MX: 'www.amazon.com.mx', BR: 'www.amazon.com.br',
+  UK: 'www.amazon.co.uk', DE: 'www.amazon.de', FR: 'www.amazon.fr', IT: 'www.amazon.it',
+  ES: 'www.amazon.es', NL: 'www.amazon.nl', SE: 'www.amazon.se', PL: 'www.amazon.pl',
+  BE: 'www.amazon.com.be', TR: 'www.amazon.com.tr', JP: 'www.amazon.co.jp', AU: 'www.amazon.com.au',
+  IN: 'www.amazon.in', SG: 'www.amazon.sg', AE: 'www.amazon.ae', SA: 'www.amazon.sa',
+};
+function productUrl(asin, meta) {
+  const recorded = (meta || {}).url || '';
+  if (/^https?:\/\//i.test(recorded)) return recorded;
+  const site = (collection && collection.site) || 'US';
+  const host = SITE_DOMAINS[site] || SITE_DOMAINS.US;
+  return `https://${host}/dp/${encodeURIComponent(asin)}`;
+}
 function fmtTime(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -398,9 +417,11 @@ function detailHtml(item, meta) {
 
 function block(item, meta) {
   meta = meta || {};
+  const url = productUrl(item.asin, meta);
+  const linkAttr = `href="${esc(url)}" target="_blank" rel="noopener" title="在亚马逊打开商品页" onclick="event.stopPropagation()"`;
   const thumbs = (meta.images || {}).main || [];
   const thumbHtml = thumbs.length
-    ? `<img class="thumb" src="${fileUrl(thumbs[0])}" alt="主图" loading="lazy" onerror="this.style.visibility='hidden'">`
+    ? `<a class="thumb-link" ${linkAttr}><img class="thumb" src="${fileUrl(thumbs[0])}" alt="主图" loading="lazy" onerror="this.style.visibility='hidden'"></a>`
     : `<div class="thumb none">无主图</div>`;
   const title = meta.title_main || meta.title || '';
   return `<div class="asin-block">
@@ -408,7 +429,7 @@ function block(item, meta) {
       <div class="who">
         ${thumbHtml}
         <div class="who-body">
-          <div class="asin-code">${esc(item.asin)}</div>
+          <a class="asin-code" ${linkAttr}>${esc(item.asin)} <span class="ext">↗</span></a>
           <div class="brandname">${esc(meta.brand || '品牌未知')}</div>
           <div class="ptitle">${esc(title)}</div>
           <div class="ptitle-zh" data-zh="${esc(item.asin)}"></div>
@@ -604,18 +625,49 @@ async function runAnalysis() {
   running = true;
   btnRun.disabled = true;
   btnRun.textContent = '评分中…';
-  statusEl.textContent = '正在评分（图片语义评审需要视觉模型时耗时更长）…';
+  statusEl.textContent = '已提交评分任务，等待队列执行（切换窗口回来也不会中断）…';
   try {
-    const res = await fetch(`/api/collections/${encodeURIComponent(cid)}/analyses`, {
+    const submit = await fetch('/api/jobs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ modules: ['title', 'bullets', 'images'] }),
+      body: JSON.stringify({ mode: 'analyze', collection_id: cid, modules: ['title', 'bullets', 'images'] }),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || `HTTP ${res.status}`);
+    if (!submit.ok) {
+      const err = await submit.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${submit.status}`);
     }
-    report = await res.json();
+    const { job_id } = await submit.json();
+    const jobEl = document.createElement('span');
+    jobEl.className = 'hint';
+    jobEl.textContent = `  任务 #${job_id}`;
+    statusEl.appendChild(jobEl);
+
+    // 轮询状态，每 2s 查一次；其他接口不受阻塞
+    while (true) {
+      await new Promise(r => setTimeout(r, 2000));
+      const st = await fetch(`/api/jobs/${encodeURIComponent(job_id)}`);
+      if (!st.ok) { statusEl.textContent = '任务状态查询失败'; break; }
+      const data = await st.json();
+      if (data.logs && data.logs.length) {
+        const last = data.logs.slice(-1)[0];
+        if (last && !last.includes('开始执行') && !last.includes('已进入队列')) {
+          statusEl.textContent = last;
+          statusEl.appendChild(jobEl.cloneNode(true));
+        }
+      }
+      if (data.status === 'done') break;
+      if (data.status === 'error') {
+        throw new Error(data.error || '评分失败');
+      }
+    }
+
+    // 拉取本次最新评分
+    const list = await fetch(`/api/collections/${encodeURIComponent(cid)}/analyses`);
+    if (!list.ok) throw new Error('评分完成但读取结果失败');
+    const arr = await list.json();
+    const latest = (arr.items || [])[0];
+    if (!latest) throw new Error('评分完成但无结果');
+    report = latest;
     render();
     statusEl.textContent = `已完成 · ${(report.items || []).length} 个 ASIN · ${fmtTime(report.created_at)}`;
   } catch (e) {

@@ -6,6 +6,7 @@
 import os
 import queue
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -52,6 +53,8 @@ class Payload(BaseModel):
     pages: int = 3
     use_xiyou: bool = True
     want: int = 5
+    collection_id: str = ""
+    modules: list | None = None
 
 
 def _worker():
@@ -75,13 +78,22 @@ def _worker():
 
         try:
             outdir = str(OUTPUT / job_id)
-            if params["mode"] == "asin":
-                result = pipeline.run_asin_job(
-                    params["asins"], params["site"], outdir,
-                    progress=progress, use_xiyou=params["use_xiyou"])
+            if params["mode"] == "analyze":
+                cdir = _collection_dir(params["collection_id"])
+                result = analysis_runner.run_analysis(cdir, params.get("modules") or None)
+                with LOCK:
+                    JOBS[job_id]["status"] = "done"
+                    JOBS[job_id]["result"] = {
+                        "collection_id": params["collection_id"],
+                        "analyses": f"/api/collections/{params['collection_id']}/analyses",
+                        "analysis_id": result.get("analysis_id"),
+                    }
             else:
-                if params.get("asins"):
-                    # 用户在前端勾选过 → 直接抓这些 ASIN，带关键词元数据
+                if params["mode"] == "asin":
+                    result = pipeline.run_asin_job(
+                        params["asins"], params["site"], outdir,
+                        progress=progress, use_xiyou=params["use_xiyou"])
+                elif params.get("asins"):
                     result = pipeline.run_asin_job(
                         params["asins"], params["site"], outdir,
                         progress=progress, use_xiyou=params["use_xiyou"],
@@ -93,16 +105,16 @@ def _worker():
                         params["bsr_max"], params["pages"], outdir,
                         progress=progress, use_xiyou=params["use_xiyou"],
                         want=params.get("want", 5))
-            with LOCK:
-                JOBS[job_id]["status"] = "done"
-                JOBS[job_id]["result"] = {
-                    "count": result["count"],
-                    "xlsx": os.path.basename(result["xlsx"]),
-                    "download": f"/api/download/{job_id}",
-                    "collection_id": result["collection_id"],
-                    "data": f"/api/collections/{result['collection_id']}",
-                    "package": f"/api/collections/{result['collection_id']}/package",
-                }
+                with LOCK:
+                    JOBS[job_id]["status"] = "done"
+                    JOBS[job_id]["result"] = {
+                        "count": result["count"],
+                        "xlsx": os.path.basename(result["xlsx"]),
+                        "download": f"/api/download/{job_id}",
+                        "collection_id": result["collection_id"],
+                        "data": f"/api/collections/{result['collection_id']}",
+                        "package": f"/api/collections/{result['collection_id']}/package",
+                    }
         except Exception as e:
             with LOCK:
                 JOBS[job_id]["status"] = "error"
@@ -137,6 +149,19 @@ def analysis_page():
 
 @app.post("/api/jobs")
 def create_job(p: Payload):
+    if p.mode == "analyze":
+        cdir = _collection_dir(p.collection_id or "")
+        if not (cdir / "data.json").is_file():
+            raise HTTPException(404, "该资料包没有结构化数据，请重新采集")
+        job_id = uuid.uuid4().hex[:10]
+        params = {"mode": "analyze", "collection_id": p.collection_id or "",
+                  "modules": [m for m in (p.modules or ["title", "bullets", "images"]) if m]}
+        with LOCK:
+            JOBS[job_id] = {"status": "queued", "logs": ["已进入队列"], "result": None,
+                            "error": None, "params": params, "created_at": time.time()}
+        Q.put((job_id, params))
+        return {"job_id": job_id}
+
     if p.mode == "asin":
         asins, bad = pipeline.parse_asins(p.asins)
         if not asins:
@@ -312,5 +337,14 @@ def api_discover(p: DiscoverPayload):
 
 
 if __name__ == "__main__":
+    # 启动前清理遗留的 Playwright chromium 进程，避免被上一次卡死的抓取残留
+    try:
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "chrome.exe", "/IM", "chromium.exe"],
+            capture_output=True, timeout=10,
+        )
+    except Exception:
+        pass
+
     OUTPUT.mkdir(exist_ok=True)
     uvicorn.run(app, host="127.0.0.1", port=int(os.getenv("PORT", "8010")), log_level="info")

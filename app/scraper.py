@@ -8,6 +8,7 @@
 import json
 import random
 import re
+import threading
 import time
 
 from playwright.sync_api import sync_playwright
@@ -156,15 +157,31 @@ class AmazonScraper:
 
     # ---------- 单品详情 ----------
     FETCH_ATTEMPTS = 10
+    FETCH_HARD_TIMEOUT = 120  # 单次抓取硬上限（秒），超时强制关闭页面
 
     def fetch(self, asin: str, with_images=True, variation_shot=None,
               retries=None, log=None) -> dict:
-        """默认最多尝试 10 次，全部失败才抛错；间隔递增但封顶 10 秒。"""
+        """默认最多尝试 10 次，全部失败才抛错；间隔递增但封顶 10 秒。
+        每次 attempt 有 120 秒硬超时，超时强制关闭页面让底层网络连接断开。"""
         tries = self.FETCH_ATTEMPTS - 1 if retries is None else retries
         last_err = None
         for attempt in range(tries + 1):
+            page_holder = {"page": None}
+            timer = None
+
+            def _killer():
+                try:
+                    p = page_holder.get("page")
+                    if p is not None:
+                        p.close()
+                except Exception:
+                    pass
+
             try:
-                return self._fetch_once(asin, with_images, variation_shot)
+                timer = threading.Timer(self.FETCH_HARD_TIMEOUT, _killer)
+                timer.daemon = True
+                timer.start()
+                return self._fetch_once(asin, with_images, variation_shot, page_holder)
             except Exception as e:
                 last_err = e
                 if attempt < tries:
@@ -172,14 +189,25 @@ class AmazonScraper:
                     if log:
                         log(f"  {asin}: 第 {attempt + 1}/{tries} 次失败（{str(e)[:60]}），{wait}s 后重试")
                     time.sleep(wait)
+            finally:
+                if timer is not None:
+                    timer.cancel()
+                try:
+                    p = page_holder.get("page")
+                    if p is not None:
+                        p.close()
+                except Exception:
+                    pass
         if log:
             log(f"  {asin}: 已重试 {tries + 1} 次仍失败，放弃")
         raise last_err
 
-    def _fetch_once(self, asin, with_images, variation_shot):
+    def _fetch_once(self, asin, with_images, variation_shot, page_holder=None):
         self._warmup()
         url = f"{self.site['domain']}/dp/{asin}"
         page = self._ctx.new_page()
+        if page_holder is not None:
+            page_holder["page"] = page
         try:
             resp = page.goto(url, wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(random.randint(1200, 2200))
