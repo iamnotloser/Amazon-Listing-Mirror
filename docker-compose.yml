@@ -1,0 +1,31 @@
+services:
+  amazon-listing:
+    build:
+      context: .
+      args:
+        PW_VERSION: "1.65.2"
+        PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
+        PLAYWRIGHT_DOWNLOAD_HOST: https://npmmirror.com/mirrors/playwright
+    image: amazon-listing-mirror:latest
+    container_name: amazon-listing
+    # 密钥从 .env 注入，不进镜像；服务器上需自行创建 .env（该文件被 .gitignore 排除）
+    env_file:
+      - .env
+    environment:
+      PORT: "8010"
+    # 对外暴露 8010。本项目无登录鉴权，务必用云安全组限制来源 IP；
+    # 若要挂 Nginx/HTTPS，改回 "127.0.0.1:8010:8010" 由宿主机反代。
+    ports:
+      - "8010:8010"
+    volumes:
+      # 采集产物（图片/Excel/ZIP）落宿主机，容器重建不丢
+      - ./output:/app/output
+    # Chromium 依赖共享内存，默认 64MB 会崩溃
+    shm_size: "1gb"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8010').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

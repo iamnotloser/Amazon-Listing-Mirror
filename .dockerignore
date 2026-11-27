@@ -1,0 +1,21 @@
+# 密钥绝不进镜像，运行时用 env_file 注入
+.env
+.env.*
+
+.git
+.venv
+venv
+
+# 运行时产物与缓存
+output
+__pycache__
+*.py[cod]
+*.log
+debug.log
+
+# 编辑器/系统
+.vscode
+.idea
+.trae
+.DS_Store
+Thumbs.db
