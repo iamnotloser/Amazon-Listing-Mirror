@@ -13,10 +13,9 @@ services:
       - .env
     environment:
       PORT: "8010"
-    # 对外暴露 8010。本项目无登录鉴权，务必用云安全组限制来源 IP；
-    # 若要挂 Nginx/HTTPS，改回 "127.0.0.1:8010:8010" 由宿主机反代。
+    # 只绑本机回环，对外统一走 Caddy；保留它是为了服务器上排查问题方便
     ports:
-      - "8010:8010"
+      - "127.0.0.1:8010:8010"
     volumes:
       # 采集产物（图片/Excel/ZIP）落宿主机，容器重建不丢
       - ./output:/app/output
@@ -29,3 +28,24 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    depends_on:
+      amazon-listing:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # 证书与 ACME 账户持久化，容器重建不用重新签发
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

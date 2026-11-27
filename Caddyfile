@@ -1,0 +1,10 @@
+# 域名与 HTTPS 配置，Caddy 会自动申请并续期 Let's Encrypt 证书
+aiproducer.xin {
+	encode zstd gzip
+	reverse_proxy amazon-listing:8010
+}
+
+# 如需同时支持 www，取消下面注释，并记得在 DNS 里加 www 的 A 记录
+# www.aiproducer.xin {
+# 	redir https://aiproducer.xin{uri} permanent
+# }
