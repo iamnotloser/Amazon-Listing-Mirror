@@ -75,7 +75,7 @@ python web/app.py         # http://127.0.0.1:8010
 | --- | --- | --- |
 | `XIYOU_MCP_URL` / `XIYOU_MCP_TOKEN` | 否 | 西柚 MCP：补近 30 天销量、用西柚校验类目 BSR |
 | `VISION_BASE_URL` / `VISION_MODEL` / `VISION_API_KEY` | 否 | 图片语义评审，需兼容 OpenAI `/chat/completions` |
-| `VISION_MAX_IMAGES` | 否 | 单次语义评审最多送图数，默认 5 |
+| `VISION_MAX_IMAGES` | 否 | 单次请求送图上限，默认 20；超过时自动分批调用并聚合，确保所有图片都被评审 |
 | `TEXT_MODEL` | 否 | 标题 / 五点中译模型，默认 `qwen-plus`，复用视觉模型的 Base URL 与 Key |
 | `TEXT_BASE_URL` / `TEXT_API_KEY` | 否 | 中译单独使用其他服务商时填写 |
 

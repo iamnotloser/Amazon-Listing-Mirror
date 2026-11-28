@@ -11,8 +11,10 @@ from PIL import Image as PILImage
 
 from .common import sub
 
-# 多数视觉模型单次请求有图片数量上限（GLM-4V-flash 为 5 张），可用 VISION_MAX_IMAGES 覆盖
-MAX_IMAGES_DEFAULT = 5
+# 单次请求送图上限。qwen3-vl-plus 等模型支持更多（百炼官方：最多 2000 张 / 请求体 ≤1GB），
+# GLM-4V-flash 则只支持 5 张。超过此值时 review() 会自动分批调用再聚合，因此不会漏看图片。
+# 可用 VISION_MAX_IMAGES 覆盖（换只支持 5 张的模型时设为 5）。
+MAX_IMAGES_DEFAULT = 20
 
 PROMPT = (
     "你是亚马逊 Listing 图片审核员。请只依据提供的图片，输出严格 JSON，不要任何解释文字。"
@@ -37,22 +39,13 @@ def available():
     return bool(os.getenv("VISION_API_KEY"))
 
 
-def review(paths, limit=None, main_count=None):
-    if not available():
-        return {"status": "skipped", "score": None,
-                "reason": "未配置 VISION_API_KEY，跳过语义评审"}
-    if not paths:
+def _request(picked, main_count):
+    """对一批图片做一次视觉模型调用，返回单次结果结构。"""
+    if not picked:
         return {"status": "skipped", "score": None, "reason": "没有可评审的图片"}
-
-    limit = limit or int(os.getenv("VISION_MAX_IMAGES") or MAX_IMAGES_DEFAULT)
-    picked = list(paths)[:limit]
-    if main_count is None:
-        main_count = len(picked)
-    main_count = max(0, min(main_count, len(picked)))
-    aplus_count = len(picked) - main_count
-
     base = os.getenv("VISION_BASE_URL", "https://api.openai.com/v1").rstrip("/")
     model = os.getenv("VISION_MODEL", "gpt-4o-mini")
+    aplus_count = len(picked) - main_count
     content = [{"type": "text", "text": PROMPT}]
     if aplus_count:
         content.append({"type": "text", "text":
@@ -105,3 +98,58 @@ def review(paths, limit=None, main_count=None):
     return {"status": "ok", "score": round(sum(s["score"] for s in subs), 1),
             "subs": subs, "observations": [str(x) for x in (data.get("observations") or [])][:6],
             "model": model}
+
+
+def review(paths, limit=None, main_count=None):
+    """视觉语义评审：看完所有图片。超过单次上限时自动分批调用，再聚合成一次结果。"""
+    if not available():
+        return {"status": "skipped", "score": None,
+                "reason": "未配置 VISION_API_KEY，跳过语义评审"}
+    if not paths:
+        return {"status": "skipped", "score": None, "reason": "没有可评审的图片"}
+
+    limit = limit or int(os.getenv("VISION_MAX_IMAGES") or MAX_IMAGES_DEFAULT)
+    if limit < 1:
+        limit = 1
+    total = len(paths)
+    main_count = total if main_count is None else max(0, min(main_count, total))
+
+    # 分批：每批最多 limit 张，保持主图在前的顺序，并计算每批内主图数量用于标注
+    batches = []
+    for start in range(0, total, limit):
+        chunk = paths[start:start + limit]
+        chunk_main = sum(1 for i in range(start, start + len(chunk)) if i < main_count)
+        batches.append((chunk, chunk_main))
+
+    results = [_request(chunk, cm) for chunk, cm in batches]
+    ok = [r for r in results if r.get("status") == "ok"]
+    if not ok:
+        return results[0]
+
+    # 聚合：4 个子项取各成功批次的平均，observations 合并去重后截断
+    ids = ["scene", "detail", "aplus_design", "text_risk"]
+    agg = {}
+    for sid in ids:
+        vals = []
+        for r in ok:
+            for s in r.get("subs") or []:
+                if s.get("id") == sid:
+                    vals.append(s.get("score") or 0)
+        agg[sid] = round(sum(vals) / len(vals), 1) if vals else 0.0
+
+    obs, seen = [], set()
+    for r in ok:
+        for o in r.get("observations") or []:
+            if o and o not in seen:
+                seen.add(o)
+                obs.append(o)
+    subs = [
+        sub("scene", "场景表达", 25, agg["scene"], {"batches": len(ok)}, "多模态评分"),
+        sub("detail", "细节覆盖", 25, agg["detail"], {"batches": len(ok)}, "多模态评分"),
+        sub("aplus_design", "A+ 信息设计", 25, agg["aplus_design"], {"batches": len(ok)}, "多模态评分"),
+        sub("text_risk", "主图纯净度", 25, agg["text_risk"], {"batches": len(ok)}, "多模态评分"),
+    ]
+    return {"status": "ok", "score": round(sum(s["score"] for s in subs), 1),
+            "subs": subs, "observations": obs[:6], "model": ok[0].get("model"),
+            "batches": len(ok), "images": total,
+            "failed_batches": len(results) - len(ok)}

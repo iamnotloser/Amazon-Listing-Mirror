@@ -60,12 +60,13 @@ def run_analysis(collection_dir, modules=None):
             result = evaluate_images(item, collection_dir)
             base = Path(collection_dir)
             images = item.get("images") or {}
+            # 送全部主图 + 全部 A+ 图给视觉模型；vision.review 内部会按模型上限自动分批
             main_paths, aplus_paths = [], []
-            for rel in (images.get("main") or [])[:3]:
+            for rel in (images.get("main") or []):
                 p = base / rel
                 if p.is_file():
                     main_paths.append(str(p))
-            for rel in (images.get("aplus") or [])[:3]:
+            for rel in (images.get("aplus") or []):
                 p = base / rel
                 if p.is_file():
                     aplus_paths.append(str(p))
